@@ -11,7 +11,7 @@
   * { box-sizing:border-box; }
   html, body { height:100%; margin:0; }
   body { font:13px/1.35 system-ui, sans-serif; color:var(--ink); background:var(--bg); display:grid;
-         grid-template-rows:auto 1fr; grid-template-columns:var(--tools-w, 150px) 0 1fr 0 var(--props-w, 270px);
+         grid-template-rows:auto 1fr; grid-template-columns:var(--tools-w, 150px) 0 1fr 0 var(--props-w, 300px);
          grid-template-areas:"top top top top top" "tools . stage . props"; }
   header { grid-area:top; display:flex; gap:8px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
   header .sep { width:1px; height:24px; background:var(--line); margin:0 4px; }
@@ -46,9 +46,10 @@
   h3:first-child { margin-top:0; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 8px; }
   .grid label, .full { display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--muted); }
+  .grid label { min-width:0; } .grid input, .grid select { width:100%; }
   .full { margin-bottom:6px; }
-  .btns { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
-  .btns button { padding:4px 7px; font-size:12px; }
+  .btns { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .btns button { padding:4px 5px; font-size:12px; flex:1 1 auto; }
   .hint { color:var(--muted); font-size:12px; }
   #status { font-size:12px; min-width:120px; }
   .err { color:var(--danger); } .ok { color:var(--ok); }
@@ -132,9 +133,15 @@
     </div>
     <div class="btns">
       <button data-act="centerH">Center ↔</button><button data-act="centerV">Center ↕</button>
+    </div>
+    <div class="btns">
       <button data-act="front">To front</button><button data-act="forward">Forward</button>
       <button data-act="backward">Backward</button><button data-act="back">To back</button>
+    </div>
+    <div class="btns">
       <button data-act="dup">Duplicate</button><button data-act="lock" id="lockBtn">Lock</button>
+    </div>
+    <div class="btns">
       <button data-act="delete" style="color:var(--danger)">Delete</button>
     </div>
   </div>
@@ -284,7 +291,7 @@ function applyZoom(z) {
   canvas.calcOffset();
 }
 // ------------------------------------------------------ resizable panels ---
-const PANEL_W = { tools: [150, 110, 320], props: [270, 200, 520] };   // default, min, max
+const PANEL_W = { tools: [150, 110, 320], props: [300, 200, 520] };   // default, min, max
 function setPanelWidth(panel, w) {
   const [, lo, hi] = PANEL_W[panel];
   w = Math.round(Math.min(hi, Math.max(lo, w)));
