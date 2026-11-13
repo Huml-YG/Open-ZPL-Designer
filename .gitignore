@@ -1,3 +1,7 @@
 .venv/
 __pycache__/
 out/
+
+# saved label designs are local (keep the folder itself)
+designs/*
+!designs/.gitkeep
