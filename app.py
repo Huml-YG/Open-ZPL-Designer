@@ -9,7 +9,7 @@ import json
 import re
 
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory
-from PIL import Image, ImageFont
+from PIL import ImageFont
 
 import label
 
@@ -63,13 +63,6 @@ def api_fonts():
 @app.get("/fonts/<path:name>")
 def font_file(name):
     return send_from_directory(FONTS_DIR, name)
-
-
-@app.get("/assets/logo.png")
-def logo_file():
-    if not label.LOGO_PATH.exists():
-        abort(404)
-    return send_from_directory(label.LOGO_PATH.parent, label.LOGO_PATH.name)
 
 
 @app.post("/api/qr")
@@ -148,21 +141,6 @@ def delete_design(name):
 def calibrate():
     cfg = label.load_config()
     return _send_or_error(label.calibration_zpl(cfg), cfg)
-
-
-@app.post("/logo")
-def upload_logo():
-    """Replace assets/logo.png (used by the designer's Logo button)."""
-    file = request.files.get("logo")
-    if not file:
-        return jsonify(ok=False, error="No file"), 400
-    try:
-        img = Image.open(file.stream)
-        img.load()
-    except (OSError, ValueError):
-        return jsonify(ok=False, error="Not an image file (use PNG or JPG)"), 400
-    img.save(label.LOGO_PATH, "PNG")
-    return jsonify(ok=True)
 
 
 if __name__ == "__main__":

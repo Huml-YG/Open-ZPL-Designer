@@ -1,6 +1,6 @@
 # Label printing (GoDEX G530, ZPL)
 
-A local web app for designing and printing product labels. It's a drag-and-drop designer, like a small Canva. You can add text, images (including SVG), your logo, QR codes and shapes. Move, resize and rotate them with the mouse, set fonts, sizes and weights in the side panel, and save designs by name. **1-bit preview** shows exactly what the printer will get. **Print** (or Ctrl+P) sends the label to the printer.
+A local web app for designing and printing product labels. It's a drag-and-drop designer, like a small Canva. You can add text, images (including SVG), QR codes and shapes. Move, resize and rotate them with the mouse, set fonts, sizes and weights in the side panel, and save designs by name. **1-bit preview** shows exactly what the printer will get. **Print** (or Ctrl+P) sends the label to the printer.
 
 ## How it works
 
@@ -33,6 +33,5 @@ uv run app.py        # open http://127.0.0.1:5000
 - `label.py`: ZPL conversion, the calibration ruler and the network send.
 - `config.toml`: printer, label size, calibration and margin. It is re-read on every request.
 - `designs/`: designs saved from the designer, one JSON file each, with images embedded.
-- `assets/logo.png`: the logo inserted by the **Logo** button. Replace it with **Upload logo…**.
 - `assets/fonts/`: fonts offered in the designer. `DMSans.ttf` is DM Sans (variable weight), and `OFL.txt` is its licence, which must stay next to it.
 - `static/vendor/fabric-5.3.0.min.js`: Fabric.js, the canvas library behind the designer. It's included in the repo so the app works offline.

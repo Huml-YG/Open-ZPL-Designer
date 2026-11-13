@@ -19,7 +19,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).parent
 CONFIG_PATH = ROOT / "config.toml"
-LOGO_PATH = ROOT / "assets" / "logo.png"
 
 
 def load_config() -> dict:

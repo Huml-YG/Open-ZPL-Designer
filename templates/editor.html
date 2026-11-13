@@ -80,14 +80,11 @@
   <button id="addText">T&nbsp; Text</button>
   <button id="addImage">🖼&nbsp; Image…</button>
   <input type="file" id="imageFile" accept="image/*" hidden>
-  <button id="addLogo">★&nbsp; Logo</button>
   <button id="addQR">▦&nbsp; QR code</button>
   <button id="addRect">▭&nbsp; Rectangle</button>
   <button id="addEllipse">◯&nbsp; Ellipse</button>
   <button id="addLine">─&nbsp; Line</button>
   <h3>Printer</h3>
-  <button id="uploadLogo" title="Replace the logo used by the Logo button">⇪&nbsp; Upload logo…</button>
-  <input type="file" id="logoFile" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" hidden>
   <button id="calibrate" title="Prints a mm ruler across the whole print head to check alignment">⊞&nbsp; Print ruler</button>
   <h3>Tips</h3>
   <div class="hint">Double-click text to edit it.<br><br>Arrows nudge 0.2&nbsp;mm,<br>Shift+arrows 2&nbsp;mm.<br><br>Ctrl+C / V / D<br>Ctrl+P prints.<br>Del removes.<br><br>Dashed line = safe margin.</div>
@@ -393,13 +390,6 @@ async function addImageFromSrc(src, { widthMm, maxHmm, top, kind = 'image', dith
   return o;
 }
 
-async function addLogo(opts = {}) {
-  const r = await fetch('/assets/logo.png');
-  if (!r.ok) { setStatus('No logo yet: use “Upload logo…” on the left', 'err'); return; }
-  const src = await fileToDataURL(await r.blob());
-  return addImageFromSrc(src, { widthMm: 40, maxHmm: 16, kind: 'logo', ...opts });
-}
-
 function addText(text = 'Text', o = {}) {
   const t = new fabric.Textbox(text, {
     left: o.left ?? mm(CFG.margin_mm), top: o.top ?? H / 2, width: o.width ?? W - 2 * mm(CFG.margin_mm),
@@ -461,8 +451,6 @@ async function defaultDesign() {
   canvas.clear(); canvas.backgroundColor = '#ffffff';
   const m = mm(CFG.margin_mm), inner = W - 2 * m;
   let y = m;
-  const logo = await addLogo({ top: m });
-  if (logo) y = logo.top + logo.getScaledHeight() + mm(3);
   const t = addText('Product name', { top: y, pt: 18, weight: 700, align: 'center', width: inner });
   y += t.height + mm(1.5);
   const s = addText('500 ml · variant', { top: y, pt: 11, align: 'center', width: inner });
@@ -660,15 +648,6 @@ function wireUI() {
       const src = isSvg ? await svgToDataURL(f) : await fileToDataURL(f);
       await addImageFromSrc(src, { dither: !isSvg && !/png|gif/i.test(f.type) });
     } catch (err) { setStatus('Could not load image: ' + err.message, 'err'); }
-  };
-  $('addLogo').onclick = () => addLogo();
-  $('uploadLogo').onclick = () => $('logoFile').click();
-  $('logoFile').onchange = async e => {
-    const f = e.target.files[0]; if (!f) return;
-    e.target.value = '';
-    const fd = new FormData(); fd.append('logo', f);
-    const r = await fetch('/logo', { method: 'POST', body: fd }), j = await r.json();
-    j.ok ? setStatus('Logo updated. Use “Logo” to add it.', 'ok') : setStatus(j.error, 'err');
   };
   $('calibrate').onclick = async () => {
     if (!confirm('Print the calibration ruler (1 label)?')) return;
