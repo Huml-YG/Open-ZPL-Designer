@@ -7,6 +7,7 @@ the GoDEX ZPL emulation handles reliably.
 
 from __future__ import annotations
 
+import io
 import socket
 import subprocess
 import tomllib
@@ -117,15 +118,30 @@ def _qr(data: str, size_px: int) -> Image.Image:
     )
 
 
+def design_size(cfg: dict) -> tuple[int, int]:
+    """Portrait design canvas in dots: the short side of the stock is the width."""
+    dpi, lab = cfg["printer"]["dpi"], cfg["label"]
+    short, long_ = sorted((lab["stock_width_mm"], lab["stock_height_mm"]))
+    return dots(short, dpi), dots(long_, dpi)
+
+
+def qr_image(data: str, ec: str = "M") -> Image.Image:
+    """QR code with 1 pixel per module and no quiet zone."""
+    levels = {"L": qrcode.constants.ERROR_CORRECT_L, "M": qrcode.constants.ERROR_CORRECT_M,
+              "Q": qrcode.constants.ERROR_CORRECT_Q, "H": qrcode.constants.ERROR_CORRECT_H}
+    qr = qrcode.QRCode(error_correction=levels.get(ec, levels["M"]), border=0, box_size=1)
+    qr.add_data(data or " ")
+    qr.make(fit=True)
+    return qr.make_image(fill_color="black", back_color="white").get_image().convert("L")
+
+
 def render(fields: dict, cfg: dict | None = None) -> Image.Image:
     """Render the label in its portrait design orientation as a 1-bit image."""
     cfg = cfg or load_config()
     dpi = cfg["printer"]["dpi"]
     lab, lay = cfg["label"], cfg["layout"]
 
-    # Portrait canvas: short side of the stock is the width.
-    short, long_ = sorted((lab["stock_width_mm"], lab["stock_height_mm"]))
-    W, H = dots(short, dpi), dots(long_, dpi)
+    W, H = design_size(cfg)
     m = dots(lay["margin_mm"], dpi)
     inner_w = W - 2 * m
     gap = dots(1.5, dpi)
@@ -188,17 +204,34 @@ def render(fields: dict, cfg: dict | None = None) -> Image.Image:
             y += lh
         y += gap // 2
 
-    canvas = canvas.point(lambda p: 0 if p < 128 else 255)
+    return finalize(canvas, cfg)
 
+
+def finalize(canvas: Image.Image, cfg: dict) -> Image.Image:
+    """Threshold a grayscale design image to 1-bit and apply the shift calibration."""
+    dpi, lab = cfg["printer"]["dpi"], cfg["label"]
+    canvas = canvas.convert("L").point(lambda p: 0 if p < 128 else 255)
     # Calibration shift in design (portrait) coordinates; content pushed past
     # the edge is cropped, the exposed area stays white.
     dx = dots(lab.get("shift_right_mm", 0), dpi)
     dy = dots(lab.get("shift_down_mm", 0), dpi)
     if dx or dy:
-        shifted = Image.new("L", (W, H), 255)
+        shifted = Image.new("L", canvas.size, 255)
         shifted.paste(canvas, (dx, dy))
         canvas = shifted
     return canvas.convert("1")
+
+
+def image_from_png(data: bytes, cfg: dict) -> Image.Image:
+    """Turn a design bitmap made by the web editor into a print-ready 1-bit image."""
+    img = Image.open(io.BytesIO(data)).convert("RGBA")
+    img = Image.alpha_composite(Image.new("RGBA", img.size, "white"), img).convert("L")
+    size = design_size(cfg)
+    if img.size != size:  # should not happen; never stretch - pad/crop instead
+        fixed = Image.new("L", size, 255)
+        fixed.paste(img, (0, 0))
+        img = fixed
+    return finalize(img, cfg)
 
 
 def to_print_orientation(img: Image.Image, cfg: dict) -> Image.Image:

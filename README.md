@@ -1,8 +1,15 @@
 # Label printing (GoDEX G530, ZPL)
 
-A local web form for product labels: fill in the fields, see an exact print preview, and click **Print**.
+A local web app for product labels with two ways to make them:
+
+- **Designer** (`/`): a drag-and-drop editor like a small Canva. You can add text, images, your logo, QR codes and shapes. Move, resize and rotate them with the mouse, set fonts, sizes and weights in the side panel, and save designs by name. **1-bit preview** shows exactly what the printer will get.
+- **Simple form** (`/form`): fill in fixed fields (title, details, QR) and print.
 
 ## How it works
+
+The designer draws the label in the browser at exactly 300 dpi (1 canvas pixel = 1 printer dot), so what you see is what prints. Images are converted to black and white right in the editor: *threshold* mode for logos, *dither* mode for photos. On Print, the browser sends the finished bitmap to the server, which turns it into ZPL with the same calibration as the simple form.
+
+The simple form renders on the server:
 
 The label is rendered as a 300 dpi black-and-white bitmap with Pillow: text (any UTF-8, including Czech diacritics), the QR code and the logo. The bitmap is sent as a single ZPL `^GFA` graphic field to the printer's raw port 9100.
 This way the job only uses basic ZPL commands (`^XA ^PW ^LL ^LH ^FO ^GFA ^PQ ^XZ`), which GoDEX's ZPL emulation supports reliably. Fonts, diacritics and rotation don't depend on the printer.
@@ -25,7 +32,9 @@ uv run app.py        # open http://127.0.0.1:5000
 
 - `label.py`: rendering, ZPL conversion and network send. It can be used without the web UI:
   `label.send(label.to_zpl(label.render({...}), cfg), cfg)`
-- `app.py`: the Flask web form. `templates/index.html` is its page.
+- `app.py`: the Flask server. `templates/editor.html` is the designer page, `templates/index.html` the simple form.
+- `designs/`: designs saved from the designer, one JSON file each, with images embedded.
+- `static/vendor/fabric-5.3.0.min.js`: Fabric.js, the canvas library behind the designer. It's included in the repo so the app works offline.
 - `config.toml`: printer, label size, layout sizes and fonts. It is re-read on every request.
 - `assets/logo.png`: the logo, uploaded through the form.
 - `assets/fonts/DMSans.ttf`: the DM Sans font (variable weight). `OFL.txt` is its licence and must stay next to it.

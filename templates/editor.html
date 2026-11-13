@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label designer</title>
+<link rel="icon" href="data:,">
+<script src="/static/vendor/fabric-5.3.0.min.js"></script>
+<style>
+  :root { --bg:#ececea; --panel:#fff; --ink:#1d1d1f; --muted:#76767a; --line:#dcdcd8; --accent:#1f6feb; --accent-ink:#fff; --danger:#c62828; --ok:#2e7d32; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; }
+  body { font:13px/1.35 system-ui, sans-serif; color:var(--ink); background:var(--bg); display:grid;
+         grid-template-rows:auto 1fr; grid-template-columns:150px 1fr 270px; grid-template-areas:"top top top" "tools stage props"; }
+  header { grid-area:top; display:flex; gap:8px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header .sep { width:1px; height:24px; background:var(--line); margin:0 4px; }
+  header .grow { flex:1; }
+  #tools { grid-area:tools; background:var(--panel); border-right:1px solid var(--line); padding:10px; display:flex; flex-direction:column; gap:6px; overflow:auto; }
+  #props { grid-area:props; background:var(--panel); border-left:1px solid var(--line); padding:12px; overflow:auto; }
+  #stage { grid-area:stage; overflow:auto; display:flex; align-items:center; justify-content:center; padding:24px; position:relative; }
+  #wrap { position:relative; box-shadow:0 2px 14px #0003; background:#fff; flex:none; }
+  .guide-margin { position:absolute; border:1px dashed #1f6feb66; pointer-events:none; }
+  .snap { position:absolute; background:#e91e63; pointer-events:none; display:none; }
+  #bitmap { position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated; display:none; pointer-events:none; background:#fff; }
+  button, select, input { font:inherit; color:inherit; }
+  button { padding:6px 10px; border:1px solid var(--line); background:#f7f7f5; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  button:hover { background:#efefec; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+  button.on { background:#dbe7fb; border-color:#9dbcf3; }
+  #tools button { text-align:left; }
+  input[type=text], input[type=number], select, textarea { padding:5px 6px; border:1px solid var(--line); border-radius:5px; background:#fff; min-width:0; }
+  textarea { width:100%; font:inherit; resize:vertical; min-height:60px; }
+  h3 { margin:14px 0 6px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  h3:first-child { margin-top:0; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 8px; }
+  .grid label, .full { display:flex; flex-direction:column; gap:2px; font-size:11px; color:var(--muted); }
+  .full { margin-bottom:6px; }
+  .btns { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .btns button { padding:4px 7px; font-size:12px; }
+  .hint { color:var(--muted); font-size:12px; }
+  #status { font-size:12px; min-width:120px; }
+  .err { color:var(--danger); } .ok { color:var(--ok); }
+  .zoom { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); display:flex; gap:4px; background:var(--panel); padding:4px; border-radius:8px; border:1px solid var(--line); box-shadow:0 1px 6px #0002; }
+  .zoom span { padding:5px 6px; min-width:48px; text-align:center; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <input type="text" id="name" placeholder="Design name" style="width:170px">
+  <button id="save">Save</button>
+  <select id="open"><option value="">Open design…</option></select>
+  <button id="new">New</button>
+  <button id="del" title="Delete saved design">Delete</button>
+  <span class="sep"></span>
+  <button id="undo" title="Ctrl+Z">↶ Undo</button>
+  <button id="redo" title="Ctrl+Y">↷ Redo</button>
+  <span class="grow"></span>
+  <span id="status"></span>
+  <button id="preview" title="Show exactly what the printer gets">1-bit preview</button>
+  <label class="hint">Copies <input type="number" id="copies" value="1" min="1" max="9999" style="width:64px"></label>
+  <button id="dl">Download .zpl</button>
+  <button id="print" class="primary">Print</button>
+  <a href="/form" class="hint" style="margin-left:6px">Simple form</a>
+</header>
+
+<aside id="tools">
+  <h3>Add</h3>
+  <button id="addText">T&nbsp; Text</button>
+  <button id="addImage">🖼&nbsp; Image…</button>
+  <input type="file" id="imageFile" accept="image/*" hidden>
+  <button id="addLogo">★&nbsp; Logo</button>
+  <button id="addQR">▦&nbsp; QR code</button>
+  <button id="addRect">▭&nbsp; Rectangle</button>
+  <button id="addEllipse">◯&nbsp; Ellipse</button>
+  <button id="addLine">─&nbsp; Line</button>
+  <h3>Tips</h3>
+  <div class="hint">Double-click text to edit it.<br><br>Arrows nudge 0.2&nbsp;mm,<br>Shift+arrows 2&nbsp;mm.<br><br>Ctrl+C / V / D<br>Del removes.<br><br>Dashed line = safe margin.</div>
+</aside>
+
+<main id="stage">
+  <div id="wrap">
+    <canvas id="c"></canvas>
+    <img id="bitmap" alt="">
+    <div class="guide-margin" id="margin"></div>
+    <div class="snap" id="snapV"></div>
+    <div class="snap" id="snapH"></div>
+  </div>
+  <div class="zoom">
+    <button id="zoomOut">−</button><span id="zoomLbl"></span><button id="zoomIn">+</button><button id="zoomFit">Fit</button>
+  </div>
+</main>
+
+<aside id="props">
+  <div id="pNone">
+    <h3>Label</h3>
+    <div class="hint" id="labelInfo"></div>
+    <p class="hint">Select an element to edit it, or add one from the left.</p>
+  </div>
+
+  <div id="pCommon" hidden>
+    <h3>Position &amp; size (mm)</h3>
+    <div class="grid">
+      <label>X <input type="number" step="0.1" data-geo="x"></label>
+      <label>Y <input type="number" step="0.1" data-geo="y"></label>
+      <label>Width <input type="number" step="0.1" min="0.1" data-geo="w"></label>
+      <label>Height <input type="number" step="0.1" min="0.1" data-geo="h"></label>
+      <label>Rotation ° <input type="number" step="1" data-geo="angle"></label>
+    </div>
+    <div class="btns">
+      <button data-act="centerH">Center ↔</button><button data-act="centerV">Center ↕</button>
+      <button data-act="front">To front</button><button data-act="forward">Forward</button>
+      <button data-act="backward">Backward</button><button data-act="back">To back</button>
+      <button data-act="dup">Duplicate</button><button data-act="lock" id="lockBtn">Lock</button>
+      <button data-act="delete" style="color:var(--danger)">Delete</button>
+    </div>
+  </div>
+
+  <div id="pText" hidden>
+    <h3>Text</h3>
+    <div class="full">Content <textarea id="tText"></textarea></div>
+    <div class="grid">
+      <label>Font <select id="tFont"></select></label>
+      <label>Size (pt) <input type="number" id="tSize" step="0.5" min="2"></label>
+      <label>Weight <select id="tWeight">
+        <option value="100">Thin</option><option value="200">ExtraLight</option><option value="300">Light</option>
+        <option value="400">Regular</option><option value="500">Medium</option><option value="600">SemiBold</option>
+        <option value="700">Bold</option><option value="800">ExtraBold</option><option value="900">Black</option>
+      </select></label>
+      <label>Align <select id="tAlign"><option>left</option><option>center</option><option>right</option><option>justify</option></select></label>
+      <label>Line height <input type="number" id="tLine" step="0.05" min="0.5"></label>
+      <label>Letter spacing <input type="number" id="tSpacing" step="10"></label>
+      <label>Color <select id="tColor"><option value="#000000">Black</option><option value="#ffffff">White</option></select></label>
+      <label>Underline <select id="tUnder"><option value="0">No</option><option value="1">Yes</option></select></label>
+    </div>
+  </div>
+
+  <div id="pImage" hidden>
+    <h3>Image → black &amp; white</h3>
+    <div class="grid">
+      <label>Mode <select id="iMode"><option value="0">Threshold (logos)</option><option value="1">Dither (photos)</option></select></label>
+      <label>Invert <select id="iInvert"><option value="0">No</option><option value="1">Yes</option></select></label>
+    </div>
+    <div class="full" style="margin-top:6px">Threshold <input type="range" id="iThreshold" min="1" max="254"></div>
+  </div>
+
+  <div id="pQR" hidden>
+    <h3>QR code</h3>
+    <div class="full">Content <textarea id="qData" style="min-height:40px"></textarea></div>
+    <div class="grid">
+      <label>Error correction <select id="qEc"><option value="L">L 7 %</option><option value="M">M 15 %</option><option value="Q">Q 25 %</option><option value="H">H 30 %</option></select></label>
+      <label>Module (dots) <input type="number" id="qModule" min="1" max="40" step="1"></label>
+    </div>
+    <p class="hint">Module = dots per QR square. Whole dots keep it crisp and scannable; 4+ recommended.</p>
+  </div>
+
+  <div id="pShape" hidden>
+    <h3>Shape</h3>
+    <div class="grid">
+      <label>Fill <select id="sFill"><option value="">None</option><option value="#000000">Black</option><option value="#ffffff">White</option></select></label>
+      <label>Outline <select id="sStroke"><option value="">None</option><option value="#000000">Black</option><option value="#ffffff">White</option></select></label>
+      <label>Outline (mm) <input type="number" id="sWidth" step="0.1" min="0"></label>
+      <label id="sRadiusL">Corner radius (mm) <input type="number" id="sRadius" step="0.5" min="0"></label>
+    </div>
+  </div>
+</aside>
+
+<script>
+'use strict';
+// Custom properties stored with each object in saved designs.
+const PROPS = ['kind', 'origSrc', 'dither', 'threshold', 'invert', 'qrData', 'qrEc', 'locked',
+               'lockMovementX', 'lockMovementY', 'lockScalingX', 'lockScalingY', 'lockRotation', 'hasControls',
+               'imageSmoothing', 'objectCaching'];
+const $ = id => document.getElementById(id);
+let CFG, W, H, DPD;            // DPD = dots per mm
+let canvas, zoom = 1;
+const mm = v => v * DPD, toMm = d => d / DPD;
+const ptToDots = pt => pt / 72 * CFG.dpi, dotsToPt = d => d * 72 / CFG.dpi;
+const round1 = v => Math.round(v * 10) / 10;
+let FONTS = [];
+
+function setStatus(msg, cls = '') { $('status').textContent = msg; $('status').className = cls; }
+
+// ------------------------------------------------------------------ setup ---
+async function init() {
+  CFG = await (await fetch('/api/config')).json();
+  W = CFG.width; H = CFG.height; DPD = CFG.dpi / 25.4;
+  $('labelInfo').textContent = `${round1(toMm(W))} × ${round1(toMm(H))} mm · ${CFG.dpi} dpi · printer ${CFG.printer}`;
+
+  FONTS = await (await fetch('/api/fonts')).json();
+  for (const f of FONTS) {
+    const face = new FontFace(f.family, `url(${f.url})`, { weight: '100 1000' });
+    document.fonts.add(await face.load());
+    $('tFont').add(new Option(f.family, f.family));
+  }
+  if (!FONTS.length) $('tFont').add(new Option('sans-serif', 'sans-serif'));
+  fabric.util.clearFabricFontCache();
+
+  canvas = new fabric.Canvas('c', { width: W, height: H, backgroundColor: '#ffffff',
+    preserveObjectStacking: true, imageSmoothingEnabled: false, uniformScaling: true });
+  fabric.Object.prototype.set({ cornerColor: '#1f6feb', borderColor: '#1f6feb', cornerSize: 10, transparentCorners: false });
+
+  canvas.on('object:added', e => { setupObject(e.target); snapshot(); });
+  canvas.on('object:removed', snapshot);
+  canvas.on('object:modified', e => onModified(e.target));
+  canvas.on('object:moving', e => snapMove(e.target));
+  canvas.on('mouse:up', hideSnap);
+  canvas.on('text:changed', () => { refreshPanel(); snapshot('typing'); });
+  for (const ev of ['selection:created', 'selection:updated', 'selection:cleared', 'object:scaling', 'object:rotating', 'object:moving'])
+    canvas.on(ev, refreshPanel);
+
+  wireUI();
+  zoomFit();
+  window.addEventListener('resize', zoomFit);
+  await refreshDesignList();
+
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('label-editor-current') || 'null'); } catch {}
+  if (saved && saved.json) { $('name').value = saved.name || ''; await loadJSON(saved.json); }
+  else { restoring = true; await defaultDesign(); restoring = false; }
+  snapshot();
+}
+
+function setupObject(o) {
+  if (!o) return;
+  if (o.kind === 'qr' || o.type === 'image')
+    o.setControlsVisibility({ mt: false, mb: false, ml: false, mr: false });
+  if (o.type === 'textbox') o.setControlsVisibility({ mt: false, mb: false });
+  // Images are already pure black/white at print size (or a QR): never blur them.
+  if (o.type === 'image') o.set({ objectCaching: false, imageSmoothing: false });
+  if (['rect', 'ellipse', 'line'].includes(o.type)) o.strokeUniform = true;
+}
+
+// ------------------------------------------------------------------- zoom ---
+function applyZoom(z) {
+  zoom = Math.max(0.1, Math.min(z, 4));
+  canvas.setZoom(zoom);
+  canvas.setDimensions({ width: Math.round(W * zoom), height: Math.round(H * zoom) });
+  const wrap = $('wrap');
+  wrap.style.width = Math.round(W * zoom) + 'px'; wrap.style.height = Math.round(H * zoom) + 'px';
+  const m = mm(CFG.margin_mm) * zoom, g = $('margin').style;
+  g.left = g.top = m + 'px'; g.width = (W * zoom - 2 * m) + 'px'; g.height = (H * zoom - 2 * m) + 'px';
+  $('zoomLbl').textContent = Math.round(zoom * 100) + ' %';
+  canvas.calcOffset();
+}
+function zoomFit() {
+  const s = $('stage');
+  applyZoom(Math.min((s.clientHeight - 80) / H, (s.clientWidth - 60) / W));
+}
+
+// -------------------------------------------------------------- snapping ---
+function snapMove(o) {
+  const tol = 6 / zoom, mg = mm(CFG.margin_mm);
+  const b = o.getBoundingRect(true, true);
+  let sx = null, sy = null;
+  const xs = [[b.left, 0], [b.left + b.width / 2, b.width / 2], [b.left + b.width, b.width]];
+  const ys = [[b.top, 0], [b.top + b.height / 2, b.height / 2], [b.top + b.height, b.height]];
+  for (const t of [W / 2, mg, W - mg, 0, W]) for (const [v, off] of xs)
+    if (sx === null && Math.abs(v - t) < tol) { o.left += t - v; sx = t; }
+  for (const t of [H / 2, mg, H - mg, 0, H]) for (const [v, off] of ys)
+    if (sy === null && Math.abs(v - t) < tol) { o.top += t - v; sy = t; }
+  o.setCoords();
+  const v = $('snapV').style, h = $('snapH').style;
+  if (sx !== null) Object.assign(v, { display: 'block', left: sx * zoom + 'px', top: 0, width: '1px', height: '100%' }); else v.display = 'none';
+  if (sy !== null) Object.assign(h, { display: 'block', top: sy * zoom + 'px', left: 0, height: '1px', width: '100%' }); else h.display = 'none';
+}
+function hideSnap() { $('snapV').style.display = $('snapH').style.display = 'none'; }
+
+// -------------------------------------------------------------- objects ---
+const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+const fabricImage = src => new Promise(res => fabric.Image.fromURL(src, img => res(img)));
+
+function fileToDataURL(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+}
+// Keep stored originals small: label is at most ~1100 dots, 1600 px is plenty.
+async function shrinkDataURL(src, max = 1600) {
+  const img = await loadImg(src);
+  const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  if (s === 1 && src.startsWith('data:image/png')) return src;
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png');
+}
+
+// Re-render an image object as pure black/white at exactly its printed size
+// in dots, so the editor shows what prints and scaling never blurs it.
+async function rasterize(o) {
+  const src = await loadImg(o.origSrc);
+  const w = Math.max(1, Math.round(o.width * o.scaleX)), h = Math.max(1, Math.round(o.height * o.scaleY));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h), p = d.data;
+  const g = new Float32Array(w * h), alpha = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const a = p[4 * i + 3] / 255;
+    let l = (0.299 * p[4 * i] + 0.587 * p[4 * i + 1] + 0.114 * p[4 * i + 2]) * a + 255 * (1 - a);
+    if (o.invert) l = 255 - l;
+    g[i] = l; alpha[i] = p[4 * i + 3] >= 128 ? 1 : 0;
+  }
+  const t = o.threshold ?? 128;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, old = g[i], v = old < t ? 0 : 255;
+    g[i] = v;
+    if (o.dither) {   // Floyd–Steinberg error diffusion
+      const e = old - v;
+      if (x + 1 < w) g[i + 1] += e * 7 / 16;
+      if (y + 1 < h) { if (x > 0) g[i + w - 1] += e * 3 / 16; g[i + w] += e * 5 / 16; if (x + 1 < w) g[i + w + 1] += e / 16; }
+    }
+  }
+  for (let i = 0; i < w * h; i++) {
+    const v = g[i] < 128 ? 0 : 255;
+    // transparent where the source was transparent (unless inverted), so images can overlap
+    const transparent = !alpha[i] && !o.invert;
+    p[4 * i] = p[4 * i + 1] = p[4 * i + 2] = v; p[4 * i + 3] = transparent ? 0 : 255;
+  }
+  ctx.putImageData(d, 0, 0);
+  o.setElement(c);
+  o.set({ scaleX: 1, scaleY: 1, width: w, height: h });
+  o.setCoords();
+  canvas.requestRenderAll();
+}
+
+// SVGs stay vector: they are kept as SVG and re-drawn at the exact printed
+// size on every resize. Give them explicit width/height so every browser
+// knows their natural size (many SVGs only have a viewBox).
+async function svgToDataURL(file) {
+  const doc = new DOMParser().parseFromString(await file.text(), 'image/svg+xml');
+  const svg = doc.documentElement;
+  if (svg.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) throw new Error('not a valid SVG file');
+  const toPx = v => {
+    const m = /^\s*([\d.]+)\s*(px|mm|cm|in|pt)?\s*$/i.exec(v || '');
+    if (!m) return NaN;   // missing or % -> fall back to viewBox
+    return parseFloat(m[1]) * ({ mm: 96 / 25.4, cm: 96 / 2.54, in: 96, pt: 96 / 72 }[(m[2] || '').toLowerCase()] || 1);
+  };
+  let w = toPx(svg.getAttribute('width')), h = toPx(svg.getAttribute('height'));
+  const vb = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  const hasVb = vb.length === 4 && vb[2] > 0 && vb[3] > 0;
+  if (!(w > 0 && h > 0)) {
+    if (hasVb) { w = vb[2]; h = vb[3]; } else { w = h = 1000; }
+  }
+  if (!hasVb) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('width', w); svg.setAttribute('height', h);
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(doc));
+}
+
+async function addImageFromSrc(src, { widthMm, maxHmm, top, kind = 'image', dither = false } = {}) {
+  if (!src.startsWith('data:image/svg')) src = await shrinkDataURL(src);
+  const o = await fabricImage(src);
+  const maxW = mm(widthMm ?? Math.min(toMm(W) * 0.6, 40));
+  let s = Math.min(maxW / o.width, maxHmm ? mm(maxHmm) / o.height : Infinity, 1e9);
+  o.set({ kind, origSrc: src, dither, threshold: 128, invert: false, scaleX: s, scaleY: s });
+  o.set({ left: (W - o.width * s) / 2, top: top ?? (H - o.height * s) / 2 });
+  await rasterize(o);
+  canvas.add(o); canvas.setActiveObject(o);
+  return o;
+}
+
+async function addLogo(opts = {}) {
+  const r = await fetch('/assets/logo.png');
+  if (!r.ok) { setStatus('No logo uploaded (use Image… or the simple form)', 'err'); return; }
+  const src = await fileToDataURL(await r.blob());
+  return addImageFromSrc(src, { widthMm: 40, maxHmm: 16, kind: 'logo', ...opts });
+}
+
+function addText(text = 'Text', o = {}) {
+  const t = new fabric.Textbox(text, {
+    left: o.left ?? mm(CFG.margin_mm), top: o.top ?? H / 2, width: o.width ?? W - 2 * mm(CFG.margin_mm),
+    fontFamily: FONTS[0]?.family || 'sans-serif', fontSize: ptToDots(o.pt ?? 10), fontWeight: o.weight ?? 400,
+    textAlign: o.align ?? 'left', lineHeight: 1.15, fill: '#000000', splitByGrapheme: false,
+  });
+  canvas.add(t); canvas.setActiveObject(t);
+  return t;
+}
+
+async function qrSource(data, ec) {
+  const r = await fetch('/api/qr', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data, ec }) });
+  return r.json();
+}
+async function addQR(data = 'https://example.com', { sizeMm = 22, top } = {}) {
+  const q = await qrSource(data, 'M');
+  const o = await fabricImage(q.src);
+  const k = Math.max(1, Math.round(mm(sizeMm) / q.modules));
+  o.set({ kind: 'qr', qrData: data, qrEc: 'M', scaleX: k, scaleY: k, imageSmoothing: false });
+  o.set({ left: (W - o.width * k) / 2, top: top ?? (H - o.height * k) / 2 });
+  canvas.add(o); canvas.setActiveObject(o);
+  return o;
+}
+async function updateQR(o, keepSize = true) {
+  const size = o.width * o.scaleX;
+  const q = await qrSource(o.qrData, o.qrEc);
+  const k = keepSize ? Math.max(1, Math.round(size / q.modules)) : Math.max(1, Math.round(o.scaleX));
+  const cx = o.left + size / 2, cy = o.top + size / 2;   // keep it centred where it was
+  await new Promise(res => o.setSrc(q.src, res));
+  o.set({ scaleX: k, scaleY: k, left: cx - o.width * k / 2, top: cy - o.height * k / 2 });
+  o.setCoords(); canvas.requestRenderAll(); refreshPanel(); snapshot();
+}
+
+function addShape(type) {
+  const base = { left: W / 2 - mm(10), top: H / 2 - mm(5), strokeUniform: true };
+  let o;
+  if (type === 'rect') o = new fabric.Rect({ ...base, width: mm(20), height: mm(10), fill: '', stroke: '#000000', strokeWidth: mm(0.4), rx: 0, ry: 0 });
+  if (type === 'ellipse') o = new fabric.Ellipse({ ...base, rx: mm(10), ry: mm(6), fill: '', stroke: '#000000', strokeWidth: mm(0.4) });
+  if (type === 'line') o = new fabric.Line([0, 0, mm(30), 0], { ...base, stroke: '#000000', strokeWidth: mm(0.4), fill: '' });
+  canvas.add(o); canvas.setActiveObject(o);
+}
+
+async function onModified(o) {
+  if (!o) return;
+  if (o.type === 'textbox' && (o.scaleX !== 1 || o.scaleY !== 1)) {
+    // turn corner-drag scaling into a real font size / box width
+    o.set({ fontSize: o.fontSize * o.scaleY, width: o.width * o.scaleX, scaleX: 1, scaleY: 1 });
+  } else if (o.kind === 'qr') {
+    const k = Math.max(1, Math.round(o.scaleX));
+    o.set({ scaleX: k, scaleY: k });
+  } else if (o.type === 'image' && o.origSrc && (Math.abs(o.scaleX - 1) > 1e-3 || Math.abs(o.scaleY - 1) > 1e-3)) {
+    await rasterize(o);
+  }
+  o.setCoords(); canvas.requestRenderAll(); refreshPanel(); snapshot();
+}
+
+// --------------------------------------------------------- default design ---
+async function defaultDesign() {
+  canvas.clear(); canvas.backgroundColor = '#ffffff';
+  const m = mm(CFG.margin_mm), inner = W - 2 * m;
+  let y = m;
+  const logo = await addLogo({ top: m });
+  if (logo) y = logo.top + logo.getScaledHeight() + mm(3);
+  const t = addText('Product name', { top: y, pt: 18, weight: 700, align: 'center', width: inner });
+  y += t.height + mm(1.5);
+  const s = addText('500 ml · variant', { top: y, pt: 11, align: 'center', width: inner });
+  y += s.height + mm(2);
+  addText('Ingredients: …\nBatch: …\nBest before: …', { top: y, pt: 8.5, width: inner });
+  const cap = addText('example.com', { pt: 7, align: 'center', width: inner });
+  cap.set({ top: H - m - cap.height }); cap.setCoords();
+  const q = await addQR('https://example.com', { sizeMm: 22 });
+  q.set({ top: cap.top - q.getScaledHeight() - mm(1) }); q.setCoords();
+  canvas.discardActiveObject(); canvas.requestRenderAll();
+}
+
+// ------------------------------------------------------------- properties ---
+function show(id, on) { $(id).hidden = !on; }
+
+function refreshPanel() {
+  const objs = canvas.getActiveObjects(), o = canvas.getActiveObject();
+  show('pNone', !o); show('pCommon', !!o);
+  const single = objs.length === 1 ? o : null;
+  show('pText', single?.type === 'textbox');
+  show('pImage', single?.type === 'image' && single.kind !== 'qr');
+  show('pQR', single?.kind === 'qr');
+  show('pShape', ['rect', 'ellipse', 'line'].includes(single?.type));
+  if (!o) return;
+  const focused = document.activeElement;
+  const setv = (el, v) => { if (el !== focused) el.value = v; };
+  const geo = { x: round1(toMm(o.left)), y: round1(toMm(o.top)), w: round1(toMm(o.getScaledWidth())), h: round1(toMm(o.getScaledHeight())), angle: Math.round(o.angle || 0) };
+  document.querySelectorAll('[data-geo]').forEach(el => setv(el, geo[el.dataset.geo]));
+  $('lockBtn').textContent = o.locked ? 'Unlock' : 'Lock';
+  $('lockBtn').classList.toggle('on', !!o.locked);
+  if (!single) return;
+  if (single.type === 'textbox') {
+    setv($('tText'), single.text); setv($('tFont'), single.fontFamily); setv($('tSize'), round1(dotsToPt(single.fontSize)));
+    setv($('tWeight'), String(single.fontWeight)); setv($('tAlign'), single.textAlign); setv($('tLine'), single.lineHeight);
+    setv($('tSpacing'), single.charSpacing || 0); setv($('tColor'), single.fill); setv($('tUnder'), single.underline ? '1' : '0');
+  }
+  if (single.type === 'image' && single.kind !== 'qr') {
+    setv($('iMode'), single.dither ? '1' : '0'); setv($('iInvert'), single.invert ? '1' : '0'); setv($('iThreshold'), single.threshold ?? 128);
+  }
+  if (single.kind === 'qr') { setv($('qData'), single.qrData); setv($('qEc'), single.qrEc || 'M'); setv($('qModule'), Math.round(single.scaleX)); }
+  if (['rect', 'ellipse', 'line'].includes(single.type)) {
+    setv($('sFill'), single.fill || ''); setv($('sStroke'), single.stroke || ''); setv($('sWidth'), round1(toMm(single.strokeWidth || 0)));
+    $('sRadiusL').hidden = single.type !== 'rect'; setv($('sRadius'), round1(toMm(single.rx || 0)));
+    $('sFill').disabled = single.type === 'line';
+  }
+}
+
+function applyGeo(key, val) {
+  const o = canvas.getActiveObject(); if (!o || isNaN(val)) return;
+  if (key === 'x') o.set('left', mm(val));
+  if (key === 'y') o.set('top', mm(val));
+  if (key === 'angle') o.rotate(val);
+  if (key === 'w' || key === 'h') {
+    const cur = key === 'w' ? o.getScaledWidth() : o.getScaledHeight(), f = mm(Math.max(val, 0.1)) / cur;
+    if (o.type === 'textbox') { if (key === 'w') o.set('width', o.width * f); }
+    else if (o.kind === 'qr' || o.type === 'image') o.set({ scaleX: o.scaleX * f, scaleY: o.scaleY * f });  // keep aspect
+    else if (key === 'w') o.set('scaleX', o.scaleX * f); else o.set('scaleY', o.scaleY * f);
+  }
+  o.setCoords(); onModified(o);
+}
+
+function action(act) {
+  const o = canvas.getActiveObject(); if (!o) return;
+  const b = o.getBoundingRect(true, true);
+  if (act === 'centerH') o.set('left', o.left + (W / 2 - (b.left + b.width / 2)));
+  if (act === 'centerV') o.set('top', o.top + (H / 2 - (b.top + b.height / 2)));
+  if (act === 'front') o.bringToFront();
+  if (act === 'back') o.sendToBack();
+  if (act === 'forward') o.bringForward();
+  if (act === 'backward') o.sendBackwards();
+  if (act === 'dup') { duplicate(); return; }
+  if (act === 'delete') { removeSelected(); return; }
+  if (act === 'lock') {
+    const v = !o.locked;
+    o.set({ locked: v, lockMovementX: v, lockMovementY: v, lockScalingX: v, lockScalingY: v, lockRotation: v, hasControls: !v });
+  }
+  o.setCoords(); canvas.requestRenderAll(); refreshPanel(); snapshot();
+}
+
+function removeSelected() {
+  const objs = canvas.getActiveObjects();
+  if (!objs.length || objs.some(o => o.isEditing)) return;
+  canvas.discardActiveObject(); objs.forEach(o => canvas.remove(o)); canvas.requestRenderAll();
+}
+
+let clipboard = null;
+function duplicate() {
+  const o = canvas.getActiveObject(); if (!o) return;
+  o.clone(c => { clipboard = c; paste(); }, PROPS);
+}
+function copy() { const o = canvas.getActiveObject(); if (o) o.clone(c => clipboard = c, PROPS); }
+function paste() {
+  if (!clipboard) return;
+  clipboard.clone(c => {
+    canvas.discardActiveObject();
+    c.set({ left: c.left + mm(2), top: c.top + mm(2), evented: true });
+    if (c.type === 'activeSelection') { c.canvas = canvas; c.forEachObject(x => canvas.add(x)); c.setCoords(); }
+    else canvas.add(c);
+    clipboard.set({ left: clipboard.left + mm(2), top: clipboard.top + mm(2) });
+    canvas.setActiveObject(c); canvas.requestRenderAll();
+  }, PROPS);
+}
+
+// ---------------------------------------------------------------- history ---
+let hist = [], hi = -1, restoring = false, snapTimer;
+function snapshot(mode) {   // mode 'typing' = debounce, otherwise immediate
+  if (restoring) return;
+  clearTimeout(snapTimer);
+  const take = () => {
+    const s = JSON.stringify(canvas.toJSON(PROPS));
+    if (hist[hi] === s) return;
+    hist = hist.slice(0, hi + 1); hist.push(s);
+    if (hist.length > 60) hist.shift();
+    hi = hist.length - 1;
+    try { localStorage.setItem('label-editor-current', JSON.stringify({ name: $('name').value, json: s })); } catch {}
+    if (previewOn) updateBitmap();
+  };
+  mode === 'typing' ? snapTimer = setTimeout(take, 400) : take();
+}
+function loadJSON(json) {
+  restoring = true;
+  return new Promise(res => canvas.loadFromJSON(json, () => {
+    canvas.getObjects().forEach(setupObject);
+    canvas.renderAll(); restoring = false; refreshPanel(); res();
+  }));
+}
+async function undo() { if (hi > 0) { hi--; await loadJSON(hist[hi]); persist(); } }
+async function redo() { if (hi < hist.length - 1) { hi++; await loadJSON(hist[hi]); persist(); } }
+function persist() { try { localStorage.setItem('label-editor-current', JSON.stringify({ name: $('name').value, json: hist[hi] })); } catch {} if (previewOn) updateBitmap(); }
+
+// ----------------------------------------------------------------- export ---
+// Render the design at exactly 1 dot per pixel on an off-screen canvas,
+// then threshold to pure black/white - this is what gets printed.
+async function exportBitmap() {
+  const sc = new fabric.StaticCanvas(null, { width: W, height: H, enableRetinaScaling: false, imageSmoothingEnabled: false });
+  await new Promise(res => sc.loadFromJSON(canvas.toJSON(PROPS), res));
+  sc.backgroundColor = '#ffffff'; sc.renderAll();
+  const el = document.createElement('canvas'); el.width = W; el.height = H;
+  const ctx = el.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(sc.lowerCanvasEl, 0, 0);
+  sc.dispose();
+  const d = ctx.getImageData(0, 0, W, H), p = d.data;
+  for (let i = 0; i < p.length; i += 4) {
+    const v = (0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2]) < 128 ? 0 : 255;
+    p[i] = p[i + 1] = p[i + 2] = v; p[i + 3] = 255;
+  }
+  ctx.putImageData(d, 0, 0);
+  return el;
+}
+const toBlob = el => new Promise(res => el.toBlob(res, 'image/png'));
+
+async function sendTo(url) {
+  const fd = new FormData();
+  fd.append('image', await toBlob(await exportBitmap()), 'label.png');
+  fd.append('copies', $('copies').value || 1);
+  return fetch(url, { method: 'POST', body: fd });
+}
+
+let previewOn = false;
+async function updateBitmap() { $('bitmap').src = (await exportBitmap()).toDataURL(); }
+
+// ----------------------------------------------------------- saved designs ---
+async function refreshDesignList() {
+  const names = await (await fetch('/api/designs')).json(), sel = $('open');
+  sel.length = 1;
+  names.forEach(n => sel.add(new Option(n, n)));
+}
+
+// --------------------------------------------------------------------- UI ---
+function wireUI() {
+  $('addText').onclick = () => addText('Text', { pt: 12 });
+  $('addImage').onclick = () => $('imageFile').click();
+  $('imageFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    e.target.value = '';
+    try {
+      const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
+      const src = isSvg ? await svgToDataURL(f) : await fileToDataURL(f);
+      await addImageFromSrc(src, { dither: !isSvg && !/png|gif/i.test(f.type) });
+    } catch (err) { setStatus('Could not load image: ' + err.message, 'err'); }
+  };
+  $('addLogo').onclick = () => addLogo();
+  $('addQR').onclick = () => addQR();
+  $('addRect').onclick = () => addShape('rect');
+  $('addEllipse').onclick = () => addShape('ellipse');
+  $('addLine').onclick = () => addShape('line');
+
+  document.querySelectorAll('[data-geo]').forEach(el => el.addEventListener('change', () => applyGeo(el.dataset.geo, parseFloat(el.value))));
+  document.querySelectorAll('[data-act]').forEach(el => el.onclick = () => action(el.dataset.act));
+
+  const textProp = (id, fn, ev = 'change') => $(id).addEventListener(ev, () => {
+    const o = canvas.getActiveObject(); if (!o || o.type !== 'textbox') return;
+    fn(o, $(id).value); o.initDimensions?.(); o.setCoords(); canvas.requestRenderAll(); snapshot(ev === 'input' ? 'typing' : undefined);
+  });
+  textProp('tText', (o, v) => o.set('text', v), 'input');
+  textProp('tFont', (o, v) => o.set('fontFamily', v));
+  textProp('tSize', (o, v) => v > 0 && o.set('fontSize', ptToDots(parseFloat(v))));
+  textProp('tWeight', (o, v) => o.set('fontWeight', parseInt(v)));
+  textProp('tAlign', (o, v) => o.set('textAlign', v));
+  textProp('tLine', (o, v) => v > 0 && o.set('lineHeight', parseFloat(v)));
+  textProp('tSpacing', (o, v) => o.set('charSpacing', parseFloat(v) || 0));
+  textProp('tColor', (o, v) => o.set('fill', v));
+  textProp('tUnder', (o, v) => o.set('underline', v === '1'));
+
+  const imgProp = (id, fn, ev = 'change') => $(id).addEventListener(ev, async () => {
+    const o = canvas.getActiveObject(); if (!o || o.type !== 'image' || o.kind === 'qr') return;
+    fn(o, $(id).value); await rasterize(o); snapshot();
+  });
+  imgProp('iMode', (o, v) => o.dither = v === '1');
+  imgProp('iInvert', (o, v) => o.invert = v === '1');
+  imgProp('iThreshold', (o, v) => o.threshold = parseInt(v));
+
+  const qrProp = (id, fn, keepSize = true) => $(id).addEventListener('change', () => {
+    const o = canvas.getActiveObject(); if (!o || o.kind !== 'qr') return;
+    fn(o, $(id).value); updateQR(o, keepSize);
+  });
+  qrProp('qData', (o, v) => o.qrData = v);
+  qrProp('qEc', (o, v) => o.qrEc = v);
+  qrProp('qModule', (o, v) => {
+    const k = Math.max(1, parseInt(v) || 1), c = o.getCenterPoint();
+    o.set({ scaleX: k, scaleY: k }); o.setPositionByOrigin(c, 'center', 'center');
+  }, false);
+
+  const shapeProp = (id, fn) => $(id).addEventListener('change', () => {
+    const o = canvas.getActiveObject(); if (!o) return;
+    fn(o, $(id).value); o.setCoords(); canvas.requestRenderAll(); snapshot();
+  });
+  shapeProp('sFill', (o, v) => o.set('fill', v));
+  shapeProp('sStroke', (o, v) => o.set('stroke', v));
+  shapeProp('sWidth', (o, v) => o.set('strokeWidth', mm(Math.max(0, parseFloat(v) || 0))));
+  shapeProp('sRadius', (o, v) => { const r = mm(Math.max(0, parseFloat(v) || 0)); o.set({ rx: r, ry: r }); });
+
+  $('undo').onclick = undo; $('redo').onclick = redo;
+  $('zoomIn').onclick = () => applyZoom(zoom * 1.25);
+  $('zoomOut').onclick = () => applyZoom(zoom / 1.25);
+  $('zoomFit').onclick = zoomFit;
+  $('stage').addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); applyZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); } }, { passive: false });
+
+  $('preview').onclick = async () => {
+    previewOn = !previewOn;
+    $('preview').classList.toggle('on', previewOn);
+    if (previewOn) { canvas.discardActiveObject(); canvas.requestRenderAll(); await updateBitmap(); }
+    $('bitmap').style.display = previewOn ? 'block' : 'none';
+  };
+
+  $('print').onclick = async () => {
+    setStatus('Sending…');
+    try {
+      const r = await sendTo('/api/print'), j = await r.json();
+      j.ok ? setStatus(`Sent ${j.copies} label(s).`, 'ok') : setStatus(j.error, 'err');
+    } catch (e) { setStatus('Print failed: ' + e, 'err'); }
+  };
+  $('dl').onclick = async () => {
+    const r = await sendTo('/api/zpl'), a = document.createElement('a');
+    a.href = URL.createObjectURL(await r.blob()); a.download = ($('name').value || 'label') + '.zpl'; a.click();
+  };
+
+  $('save').onclick = async () => {
+    const name = $('name').value.trim();
+    if (!name) { setStatus('Enter a design name first', 'err'); $('name').focus(); return; }
+    const r = await fetch('/api/designs/' + encodeURIComponent(name), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(canvas.toJSON(PROPS)) });
+    r.ok ? setStatus(`Saved “${name}”`, 'ok') : setStatus('Save failed (name: letters, numbers, space, - _ .)', 'err');
+    refreshDesignList(); persist();
+  };
+  $('open').onchange = async e => {
+    const name = e.target.value; if (!name) return;
+    const r = await fetch('/api/designs/' + encodeURIComponent(name));
+    if (r.ok) { await loadJSON(await r.text()); $('name').value = name; snapshot(); setStatus(`Opened “${name}”`, 'ok'); }
+    e.target.value = '';
+  };
+  $('new').onclick = async () => {
+    if (!confirm('Start a new design? Unsaved changes to the current one are lost.')) return;
+    $('name').value = ''; restoring = true; await defaultDesign(); restoring = false; snapshot();
+  };
+  $('del').onclick = async () => {
+    const name = $('name').value.trim(); if (!name) return;
+    if (!confirm(`Delete saved design “${name}”? The label on screen stays.`)) return;
+    await fetch('/api/designs/' + encodeURIComponent(name), { method: 'DELETE' });
+    refreshDesignList(); setStatus(`Deleted “${name}”`, 'ok');
+  };
+  $('name').addEventListener('change', persist);
+
+  document.addEventListener('keydown', e => {
+    const tag = document.activeElement?.tagName;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || canvas.getActiveObject()?.isEditing) return;
+    const ctrl = e.ctrlKey || e.metaKey, o = canvas.getActiveObject();
+    if (ctrl && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+    else if (ctrl && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    else if (ctrl && e.key.toLowerCase() === 'c') copy();
+    else if (ctrl && e.key.toLowerCase() === 'v') paste();
+    else if (ctrl && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicate(); }
+    else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSelected(); }
+    else if (o && e.key.startsWith('Arrow') && !o.locked) {
+      e.preventDefault();
+      const step = mm(e.shiftKey ? 2 : 0.2);
+      if (e.key === 'ArrowLeft') o.left -= step; if (e.key === 'ArrowRight') o.left += step;
+      if (e.key === 'ArrowUp') o.top -= step; if (e.key === 'ArrowDown') o.top += step;
+      o.setCoords(); canvas.requestRenderAll(); refreshPanel(); snapshot('typing');
+    }
+  });
+}
+
+init().catch(e => { console.error(e); setStatus('Editor failed to start: ' + e.message, 'err'); });
+</script>
+</body>
+</html>
