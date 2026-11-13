@@ -28,3 +28,4 @@ uv run app.py        # open http://127.0.0.1:5000
 - `app.py`: the Flask web form. `templates/index.html` is its page.
 - `config.toml`: printer, label size, layout sizes and fonts. It is re-read on every request.
 - `assets/logo.png`: the logo, uploaded through the form.
+- `assets/fonts/DMSans.ttf`: the DM Sans font (variable weight). `OFL.txt` is its licence and must stay next to it.

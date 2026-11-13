@@ -43,6 +43,10 @@ qr_size_mm = 22
 caption_size_mm = 2.4
 
 [fonts]
-# Leave empty to auto-detect DejaVu Sans via fontconfig, or set a .ttf path.
-regular = ""
-bold = ""
+# .ttf path (relative to this folder), or empty to auto-detect DejaVu Sans.
+# DM Sans is a variable font: one file, weight chosen below (100-1000;
+# 400 = Regular, 500 = Medium, 600 = SemiBold, 700 = Bold).
+regular = "assets/fonts/DMSans.ttf"
+bold = "assets/fonts/DMSans.ttf"
+regular_weight = 400
+bold_weight = 700

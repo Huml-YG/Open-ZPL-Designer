@@ -33,7 +33,8 @@ def dots(mm: float, dpi: int) -> int:
 @lru_cache
 def _font_file(path: str, bold: bool) -> str:
     if path:
-        return path
+        p = Path(path)
+        return str(p if p.is_absolute() else ROOT / p)
     pattern = "DejaVu Sans:bold" if bold else "DejaVu Sans"
     res = subprocess.run(["fc-match", "-f", "%{file}", pattern], capture_output=True, text=True)
     if res.returncode != 0 or not res.stdout:
@@ -42,8 +43,34 @@ def _font_file(path: str, bold: bool) -> str:
 
 
 def _font(cfg: dict, bold: bool, size_px: int) -> ImageFont.FreeTypeFont:
-    path = cfg.get("fonts", {}).get("bold" if bold else "regular", "")
-    return ImageFont.truetype(_font_file(path, bold), max(size_px, 6))
+    fonts = cfg.get("fonts", {})
+    path = fonts.get("bold" if bold else "regular", "")
+    weight = fonts.get("bold_weight" if bold else "regular_weight", 700 if bold else 400)
+    dpi = cfg["printer"]["dpi"]
+    return _load_font(_font_file(path, bold), max(size_px, 6), weight, dpi)
+
+
+@lru_cache(maxsize=256)
+def _load_font(file: str, size_px: int, weight: int, dpi: int) -> ImageFont.FreeTypeFont:
+    font = ImageFont.truetype(file, size_px)
+    try:
+        axes = font.get_variation_axes()
+    except OSError:
+        return font  # static font: weight comes from the file itself
+    # Variable font: set weight, and optical size to the real printed point size.
+    point_size = size_px / dpi * 72
+    values = []
+    for ax in axes:
+        name = ax["name"].decode() if isinstance(ax["name"], bytes) else ax["name"]
+        if name == "Weight":
+            v = weight
+        elif name == "Optical size":
+            v = point_size
+        else:
+            v = ax["default"]
+        values.append(min(max(v, ax["minimum"]), ax["maximum"]))
+    font.set_variation_by_axes(values)
+    return font
 
 
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
