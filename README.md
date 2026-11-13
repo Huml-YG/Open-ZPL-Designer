@@ -1,4 +1,4 @@
-# Label printing (GoDEX G530)
+# Open ZPL Designer
 
 A small local web app for designing product labels and printing them on a **GoDEX G530** thermal printer over the network.
 
@@ -34,8 +34,8 @@ Because the printer only ever receives a finished bitmap, nothing depends on its
 ### 2. Get the code and start the app
 
 ```sh
-git clone git@github.com:Huml-YG/lable-printing-zpl.git
-cd lable-printing-zpl
+git clone https://github.com/Huml-YG/Open-ZPL-Designer.git
+cd Open-ZPL-Designer
 uv run app.py
 ```
 
