@@ -129,11 +129,10 @@ def to_zpl(img: Image.Image, cfg: dict, copies: int = 1) -> str:
     dpi = cfg["printer"]["dpi"]
     lab = cfg["label"]
     ll = dots(lab["stock_height_mm"], dpi)
-    # GoDEX centres a ^PW narrower than the head, which shifts the origin
-    # unpredictably. Always use the full head width so x=0 is the head edge
-    # (as on the calibration ruler) and place the label at head_offset_mm.
-    x0 = dots(lab.get("head_offset_mm", 0), dpi)
-    pw = dots(cfg["printer"].get("head_width_mm", 105.7), dpi)
+    # ^PW = the label width: the GoDEX centres a print width narrower than
+    # its head on its own, following the label guides. Small corrections go
+    # through shift_* (applied in finalize).
+    pw = dots(lab["stock_width_mm"], dpi)
 
     # Pad width to a multiple of 8 with white so row padding bits stay blank.
     w8 = (img.width + 7) // 8 * 8
@@ -151,27 +150,28 @@ def to_zpl(img: Image.Image, cfg: dict, copies: int = 1) -> str:
         cmds.append(f"^MD{p['darkness']}")
     if "speed" in p:
         cmds.append(f"^PR{p['speed']}")
-    cmds.append(f"^FO{x0},0^GFA,{len(raw)},{len(raw)},{bpr},{raw.hex().upper()}^FS")
+    cmds.append(f"^FO0,0^GFA,{len(raw)},{len(raw)},{bpr},{raw.hex().upper()}^FS")
     cmds.append(f"^PQ{max(1, int(copies))}")
     cmds.append("^XZ")
     return "\n".join(cmds) + "\n"
 
 
 def calibration_zpl(cfg: dict) -> str:
-    """A ruler across the full print head, in raw printer coordinates.
+    """A mm ruler over the label area, placed by the printer exactly like a label.
 
-    Shows where x=0 / y=0 land on the physical label, so head_offset_mm and
-    shift_* can be read off directly instead of guessed.
+    Uses the same ^PW (label width, centred by the printer) as to_zpl but no
+    shift_*, so it shows where an uncorrected print lands: if 0 and the far
+    end don't sit on the label edges, set shift_* by the difference.
     """
     dpi = cfg["printer"]["dpi"]
-    head_mm = cfg["printer"].get("head_width_mm", 105.7)
+    head_mm = cfg["label"]["stock_width_mm"]
     W, H = dots(head_mm, dpi), dots(cfg["label"]["stock_height_mm"], dpi)
     img = Image.new("L", (W, H), 255)
     d = ImageDraw.Draw(img)
     num = _font(cfg, True, dots(2.6, dpi))
     small = _font(cfg, False, dots(2.2, dpi))
 
-    # x ruler (across the head) in the middle of the label
+    # x ruler (across the label) in the middle of it
     mid = H // 2
     for v in range(int(head_mm) + 1):
         x = dots(v, dpi)
@@ -180,7 +180,7 @@ def calibration_zpl(cfg: dict) -> str:
         if v % 10 == 0:
             d.text((x + 4, mid + dots(0.8, dpi)), str(v), font=num, fill=0)
     d.line([(0, mid), (W, mid)], fill=0, width=2)
-    d.text((dots(2, dpi), mid + dots(5, dpi)), "x [mm] across head ->", font=small, fill=0)
+    d.text((dots(2, dpi), mid + dots(5, dpi)), "x [mm] across label ->", font=small, fill=0)
 
     # y ruler (feed direction) near x = 30 mm
     xr = dots(30, dpi)

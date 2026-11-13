@@ -4,7 +4,6 @@
 host = "192.168.101.141"   # GoDEX G530 IP address (see printer self-test / config page)
 port = 9100             # raw printing port
 dpi = 300               # G530 = 300 dpi (G500 would be 203)
-head_width_mm = 105.7   # max print width of the G530 (4.16")
 # Optional fine-tuning; leave commented out to use the printer's own settings.
 # darkness = 15         # ^MD: -30..30 relative darkness
 # speed = 3             # ^PR: inches per second
@@ -22,16 +21,16 @@ corner_radius_mm = 1.0   # rounded label corners - shown in the designer only
 #   stock 50 wide x 90 long  -> rotate = 0
 rotate = 270
 
-# Where the label's edge sits on the printer's x axis (across the head).
-# Read it off the "Print calibration ruler" label: the x value at the label's
-# left edge (measured 2026-11-13: label spans x = 0.7 .. 90.7 mm).
-head_offset_mm = 0.7
-
-# Fine calibration: shift the whole print if it is off-centre on the label.
+# The print is sent exactly label-wide and the printer centres it itself.
+# Offsets: shift the whole print if it still lands off-centre on the label.
 # Directions are as you read the finished (portrait) label, regardless of rotate.
 # Positive shift_down moves everything down; negative moves it up. Same for shift_right.
-shift_down_mm = 0.0
-shift_right_mm = 0.0
+# Measured 2026-11-13 with the ruler (rotate = 270): ruler x=0 (= label top)
+# sat 3 mm inside the label, y=0 (= label right edge) 0.5 mm inside.
+# Test print with lines on the 3 mm margin then showed top 2.0 mm / bottom
+# 3.7 mm, so moved down by the average error (0.85 mm): -3.0 -> -2.15.
+shift_down_mm = -2.15
+shift_right_mm = 0.5
 
 # The editor shows an arrow at the label edge that leaves the printer first,
 # worked out from rotate (the G530 ejects the bottom of its image first).
@@ -39,7 +38,7 @@ shift_right_mm = 0.0
 feed_flip = false
 
 [layout]
-margin_mm = 2.5         # safe-margin guide shown in the designer
+margin_mm = 3.0         # safe-margin guide shown in the designer (keeps clear of the unprintable top strip, see shift_down_mm)
 
 [fonts]
 # Font for the calibration ruler print (the designer uses assets/fonts/*).

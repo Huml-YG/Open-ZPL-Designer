@@ -19,7 +19,7 @@ uv run app.py        # open http://127.0.0.1:5000
 
 1. Set `printer.host` in `config.toml` to the G530's IP address. The printer's self-test / configuration printout shows it.
 2. Make sure the printer accepts ZPL. In GoDEX's GoLabel / NetSetting tool, the command language should be set to **Auto** or **ZPL**. If the printer prints the ZPL as text, or prints nothing, this setting is the cause.
-3. Click **Print ruler** in the designer. It prints a mm scale across the whole print head. Set `head_offset_mm` to the x value at the label's edge.
+3. Click **Print ruler** in the designer. It prints a mm scale over the label area, placed by the printer the same way as a label (the job is exactly label-wide, and the printer centres it). If 0 and 90 don't land on the label edges, correct it with `shift_down_mm` / `shift_right_mm` (step 4).
 4. Print a label and check it:
    - If it's upside down, switch `rotate` between `90` and `270`. If your stock feeds 50 mm wide, use `rotate = 0`.
    - If the grey arrow beside the canvas doesn't point at the edge that comes out of the printer first, set `feed_flip = true`.
