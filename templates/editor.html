@@ -18,8 +18,11 @@
   header .grow { flex:1; }
   #tools { grid-area:tools; background:var(--panel); border-right:1px solid var(--line); padding:10px; display:flex; flex-direction:column; gap:6px; overflow:auto; }
   #props { grid-area:props; background:var(--panel); border-left:1px solid var(--line); padding:12px; overflow:auto; }
-  #stage { grid-area:stage; overflow:auto; display:flex; align-items:center; justify-content:center; padding:24px; position:relative; }
-  #wrap { position:relative; box-shadow:0 2px 14px #0003; background:#fff; flex:none; }
+  /* margin:auto centres the label while it fits; unlike align/justify-content:center it
+     never pushes an oversized (zoomed-in) label into unscrollable space above/left.
+     56px padding keeps the feed arrow beside the label inside the scroll area. */
+  #stage { grid-area:stage; overflow:auto; display:flex; padding:56px; position:relative; }
+  #wrap { position:relative; box-shadow:0 2px 14px #0003; background:#fff; flex:none; margin:auto; }
   /* Design renders on white; multiply lets the label colour show wherever no ink is printed. */
   #wrap .lower-canvas { mix-blend-mode:multiply; }
   /* rounded label corners (radius set from config in applyZoom) */
@@ -171,7 +174,7 @@
       <label>Mode <select id="iMode"><option value="0">Threshold (logos)</option><option value="1">Dither (photos)</option></select></label>
       <label>Invert <select id="iInvert"><option value="0">No</option><option value="1">Yes</option></select></label>
     </div>
-    <div class="full" style="margin-top:6px"><span style="display:flex;justify-content:space-between"><span>Lighter</span><span>Darkness</span><span>Darker</span></span><input type="range" id="iThreshold" min="1" max="254" title="Double-click to reset"></div>
+    <div class="full" style="margin-top:6px"><span style="display:flex;justify-content:space-between"><span>Lighter</span><span>Darkness <b id="iThresholdPct" style="color:var(--ink);font-weight:600"></b></span><span>Darker</span></span><input type="range" id="iThreshold" min="1" max="254" title="Double-click to reset"></div>
   </div>
 
   <div id="pQR" hidden>
@@ -248,7 +251,7 @@ async function init() {
 
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('label-editor-current') || 'null'); } catch {}
-  if (saved && saved.json) { $('name').value = saved.name || ''; await loadJSON(saved.json); }
+  if (saved && saved.json) { $('name').value = saved.name || ''; await loadJSON(saved.json, { fresh: true }); }
   else { restoring = true; emptyDesign(); restoring = false; }
   snapshot();
 }
@@ -328,7 +331,7 @@ function setupResizers() {
 
 function zoomFit() {
   const s = $('stage');
-  applyZoom(Math.min((s.clientHeight - 80) / H, (s.clientWidth - 60) / W));
+  applyZoom(Math.min((s.clientHeight - 112) / H, (s.clientWidth - 112) / W));
 }
 
 // -------------------------------------------------------------- snapping ---
@@ -369,7 +372,10 @@ async function shrinkDataURL(src, max = 1600) {
 
 // Re-render an image object as pure black/white at exactly its printed size
 // in dots, so the editor shows what prints and scaling never blurs it.
-async function rasterize(o) {
+// forPrint: the bitmap sent to the printer, lightened by dither_gamma to make
+// up for dot gain. Otherwise the editor display, which imitates the paper
+// (dither_preview_gamma), so dithered images look on screen as they print.
+async function rasterize(o, { forPrint = false } = {}) {
   const seq = o._rasterSeq = (o._rasterSeq || 0) + 1;   // drop results of superseded runs (live slider)
   const src = await loadImg(o.origSrc);
   if (seq !== o._rasterSeq) return;
@@ -389,10 +395,16 @@ async function rasterize(o) {
   // Darkness slider (o.threshold, 1..254, 128 = neutral). Threshold mode: the
   // black/white cut-off. Dither mode: error diffusion keeps the average tone
   // whatever the cut-off, so instead darken/lighten the tones with a gamma
-  // curve (254 -> gamma 4, 1 -> 1/4) and dither at the fixed midpoint.
+  // curve (see below; dot gain settings from config.toml) and dither at the
+  // fixed midpoint.
   let t = o.threshold ?? 128;
   if (o.dither) {
-    const gamma = Math.pow(4, (t - 128) / 126);
+    // Slider factor (254 -> 4, 128 -> 1, 1 -> 1/4); gammas multiply. On paper
+    // dot gain exaggerates the slider, so the editor display raises the factor
+    // to dither_preview_slider (measured: 25 % prints like the screen's 0 %).
+    const k = Math.pow(4, (t - 128) / 126);
+    const gamma = forPrint ? (CFG.dither_gamma || 1) * k
+                           : (CFG.dither_preview_gamma || 1) * Math.pow(k, CFG.dither_preview_slider ?? 1);
     for (let i = 0; i < w * h; i++) g[i] = 255 * Math.pow(Math.min(255, Math.max(0, g[i])) / 255, gamma);
     t = 128;
   }
@@ -519,6 +531,8 @@ function emptyDesign() {
 
 // ------------------------------------------------------------- properties ---
 function show(id, on) { $(id).hidden = !on; }
+// Darkness slider 1..254 shown as 0..100 % (50 % = neutral, the default)
+function showDarkness() { $('iThresholdPct').textContent = Math.round(($('iThreshold').value - 1) / 253 * 100) + ' %'; }
 
 function refreshPanel() {
   const objs = canvas.getActiveObjects(), o = canvas.getActiveObject();
@@ -542,7 +556,7 @@ function refreshPanel() {
     setv($('tSpacing'), single.charSpacing || 0); setv($('tColor'), single.fill); setv($('tUnder'), single.underline ? '1' : '0');
   }
   if (single.type === 'image' && single.kind !== 'qr') {
-    setv($('iMode'), single.dither ? '1' : '0'); setv($('iInvert'), single.invert ? '1' : '0'); setv($('iThreshold'), single.threshold ?? 128);
+    setv($('iMode'), single.dither ? '1' : '0'); setv($('iInvert'), single.invert ? '1' : '0'); setv($('iThreshold'), single.threshold ?? 128); showDarkness();
   }
   if (single.kind === 'qr') { setv($('qData'), single.qrData); setv($('qEc'), single.qrEc || 'M'); setv($('qModule'), Math.round(single.scaleX)); }
   if (['rect', 'ellipse', 'line'].includes(single.type)) {
@@ -628,15 +642,17 @@ function snapshot(mode) {   // mode 'typing' = debounce, otherwise immediate
 function designJSON() { return { ...canvas.toJSON(PROPS), labelColor: $('bg').value }; }
 function setLabelColor(c) { $('bg').value = c; $('wrap').style.background = c; if (previewOn) updateBitmap(); }
 
-function loadJSON(json) {
+// fresh: re-convert images from their originals, so black & white settings
+// that live in config.toml (dither_gamma) apply to designs saved earlier.
+async function loadJSON(json, { fresh = false } = {}) {
   restoring = true;
   if (typeof json === 'string') json = JSON.parse(json);
   json = { ...json, background: '#ffffff' };
-  return new Promise(res => canvas.loadFromJSON(json, () => {
-    canvas.getObjects().forEach(setupObject);
-    setLabelColor(toHexColor(json.labelColor));
-    canvas.renderAll(); restoring = false; refreshPanel(); res();
-  }));
+  await new Promise(res => canvas.loadFromJSON(json, res));
+  canvas.getObjects().forEach(setupObject);
+  if (fresh) for (const o of canvas.getObjects()) if (o.type === 'image' && o.origSrc) await rasterize(o);
+  setLabelColor(toHexColor(json.labelColor));
+  canvas.renderAll(); restoring = false; refreshPanel();
 }
 async function undo() { if (hi > 0) { hi--; await loadJSON(hist[hi]); persist(); } }
 async function redo() { if (hi < hist.length - 1) { hi++; await loadJSON(hist[hi]); persist(); } }
@@ -648,6 +664,8 @@ function persist() { try { localStorage.setItem('label-editor-current', JSON.str
 async function exportBitmap() {
   const sc = new fabric.StaticCanvas(null, { width: W, height: H, enableRetinaScaling: false, imageSmoothingEnabled: false });
   await new Promise(res => sc.loadFromJSON(canvas.toJSON(PROPS), res));
+  // the editor shows dithered images as they look on paper; print the compensated bitmap
+  for (const o of sc.getObjects()) if (o.type === 'image' && o.origSrc && o.dither) await rasterize(o, { forPrint: true });
   sc.backgroundColor = '#ffffff'; sc.renderAll();
   const el = document.createElement('canvas'); el.width = W; el.height = H;
   const ctx = el.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
@@ -742,8 +760,9 @@ function wireUI() {
   imgProp('iInvert', (o, v) => o.invert = v === '1');
   imgProp('iThreshold', (o, v) => o.threshold = parseInt(v));
   imgProp('iThreshold', (o, v) => o.threshold = parseInt(v), 'input');   // live while dragging
+  $('iThreshold').addEventListener('input', showDarkness);
   $('iThreshold').addEventListener('dblclick', () => {
-    $('iThreshold').value = 128; $('iThreshold').dispatchEvent(new Event('change'));
+    $('iThreshold').value = 128; showDarkness(); $('iThreshold').dispatchEvent(new Event('change'));
   });
 
   const qrProp = (id, fn, keepSize = true) => $(id).addEventListener('change', () => {
@@ -807,7 +826,7 @@ function wireUI() {
   $('open').onchange = async e => {
     const name = e.target.value; if (!name) return;
     const r = await fetch('/api/designs/' + encodeURIComponent(name));
-    if (r.ok) { await loadJSON(await r.text()); $('name').value = name; snapshot(); setStatus(`Opened “${name}”`, 'ok'); }
+    if (r.ok) { await loadJSON(await r.text(), { fresh: true }); $('name').value = name; snapshot(); setStatus(`Opened “${name}”`, 'ok'); }
     e.target.value = '';
   };
   $('new').onclick = async () => {

@@ -8,6 +8,22 @@ dpi = 300               # G530 = 300 dpi (G500 would be 203)
 # darkness = 15         # ^MD: -30..30 relative darkness
 # speed = 3             # ^PR: inches per second
 
+# Dot gain compensation for dithered images (photos, gradients). Thermal dots
+# spread into their neighbours, so a dither prints much darker than the 1-bit
+# preview. Tones are lightened by this gamma before dithering (1 = off,
+# smaller = lighter); the image Darkness slider works on top of it, 50 % = this.
+# Measured 2026-11-13 on a black-to-transparent gradient: the old 5 % setting
+# (gamma 0.285) gave a usable gradient.
+dither_gamma = 0.285
+# How dark dithered images look in the editor, imitating the printed label
+# (1 = the plain dither, larger = darker). Only the screen: tune it until the
+# editor matches a real print. "1-bit preview" still shows the exact bitmap.
+dither_preview_gamma = 3.0
+# How much stronger the Darkness slider acts on paper than in the plain dither
+# (1 = same). Measured 2026-11-13: 25 % printed like the editor had shown 0 %,
+# i.e. twice as strong. Only the screen; 50 % is unaffected.
+dither_preview_slider = 1.7
+
 [label]
 # Physical label stock AS IT PASSES THE PRINT HEAD:
 # width = across the head, height = in the feed direction.
