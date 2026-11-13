@@ -132,5 +132,11 @@ To retune, print a black-to-transparent gradient at 25 %, 50 % and 75 % darkness
 | `config.toml` | Printer address, label size, rotation, offsets, margin, dot gain |
 | `designs/` | Saved designs, one JSON file each, with images embedded. Local only: ignored by git, so back the folder up yourself |
 | `assets/fonts/` | Fonts offered in the editor. `DMSans.ttf` (variable weight) and its licence `OFL.txt`, which must stay alongside it |
-| `static/vendor/` | Fabric.js 5.3.0, the canvas library, bundled so the app works offline |
+| `static/vendor/` | Fabric.js 5.3.0, the canvas library, bundled so the app works offline (licence in `fabric-LICENSE.txt`) |
 | `shell.nix` | NixOS dev shell (uv + libraries Pillow needs) |
+
+## License
+
+[MIT](LICENSE) © 2026 David Huml.
+
+Bundled third-party parts keep their own licences: DM Sans under the SIL Open Font License ([`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)), Fabric.js under MIT ([`static/vendor/fabric-LICENSE.txt`](static/vendor/fabric-LICENSE.txt)).
