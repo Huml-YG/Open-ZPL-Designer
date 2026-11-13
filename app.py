@@ -1,7 +1,4 @@
-"""Local web app for designing and printing product labels.
-
-  /       graphical label editor (drag & drop)
-  /form   simple fill-in form
+"""Local web app for designing and printing product labels (drag & drop designer).
 
 Run:  uv run app.py   then open http://127.0.0.1:5000
 """
@@ -12,7 +9,7 @@ import json
 import re
 
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory
-from PIL import ImageFont
+from PIL import Image, ImageFont
 
 import label
 
@@ -50,7 +47,8 @@ def api_config():
     return jsonify(dpi=cfg["printer"]["dpi"], width=w, height=h,
                    margin_mm=cfg["layout"]["margin_mm"], printer=cfg["printer"]["host"],
                    rotate=cfg["label"].get("rotate", 0) % 360,
-                   feed_flip=bool(cfg["label"].get("feed_flip", False)))
+                   feed_flip=bool(cfg["label"].get("feed_flip", False)),
+                   corner_radius_mm=cfg["label"].get("corner_radius_mm", 0))
 
 
 @app.get("/api/fonts")
@@ -144,50 +142,7 @@ def delete_design(name):
     return jsonify(ok=True)
 
 
-# ----------------------------------------------------------- simple form ---
-
-def _fields() -> dict:
-    data = request.get_json(silent=True) or {}
-    return {
-        "title": data.get("title", ""),
-        "subtitle": data.get("subtitle", ""),
-        "details": data.get("details", ""),
-        "qr_data": data.get("qr_data", ""),
-        "qr_caption": data.get("qr_caption", ""),
-        "show_logo": bool(data.get("show_logo", True)),
-        "copies": _copies(data.get("copies")),
-    }
-
-
-@app.get("/form")
-def form():
-    cfg = label.load_config()
-    return render_template("index.html", cfg=cfg, has_logo=label.LOGO_PATH.exists())
-
-
-@app.post("/preview")
-def preview():
-    img = label.render(_fields())
-    buf = io.BytesIO()
-    img.save(buf, "PNG")
-    return Response(buf.getvalue(), mimetype="image/png")
-
-
-@app.post("/zpl")
-def zpl():
-    f = _fields()
-    cfg = label.load_config()
-    body = label.to_zpl(label.render(f, cfg), cfg, f["copies"])
-    return Response(body, mimetype="text/plain",
-                    headers={"Content-Disposition": "attachment; filename=label.zpl"})
-
-
-@app.post("/print")
-def print_label():
-    f = _fields()
-    cfg = label.load_config()
-    return _send_or_error(label.to_zpl(label.render(f, cfg), cfg, f["copies"]), cfg, f["copies"])
-
+# --------------------------------------------------------------- printer ---
 
 @app.post("/calibrate")
 def calibrate():
@@ -197,17 +152,16 @@ def calibrate():
 
 @app.post("/logo")
 def upload_logo():
+    """Replace assets/logo.png (used by the designer's Logo button)."""
     file = request.files.get("logo")
     if not file:
         return jsonify(ok=False, error="No file"), 400
-    from PIL import Image
-    Image.open(file.stream).save(label.LOGO_PATH, "PNG")
-    return jsonify(ok=True)
-
-
-@app.delete("/logo")
-def delete_logo():
-    label.LOGO_PATH.unlink(missing_ok=True)
+    try:
+        img = Image.open(file.stream)
+        img.load()
+    except (OSError, ValueError):
+        return jsonify(ok=False, error="Not an image file (use PNG or JPG)"), 400
+    img.save(label.LOGO_PATH, "PNG")
     return jsonify(ok=True)
 
 

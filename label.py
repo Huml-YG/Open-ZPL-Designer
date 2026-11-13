@@ -1,8 +1,8 @@
-"""Render a product label to a 1-bit bitmap and wrap it in ZPL (^GFA).
+"""Turn label bitmaps from the web designer into ZPL (^GFA) and send them.
 
-Everything (fonts, diacritics, QR, logo, rotation) is rasterised here, so the
-printer only needs to understand the basic ZPL graphic-field command - which
-the GoDEX ZPL emulation handles reliably.
+The designer rasterises everything (fonts, diacritics, QR, images) in the
+browser, so the printer only needs the basic ZPL graphic-field command -
+which the GoDEX ZPL emulation handles reliably.
 """
 
 from __future__ import annotations
@@ -74,50 +74,6 @@ def _load_font(file: str, size_px: int, weight: int, dpi: int) -> ImageFont.Free
     return font
 
 
-def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> list[str]:
-    lines: list[str] = []
-    for para in text.strip().split("\n"):
-        words = para.split()
-        if not words:
-            lines.append("")
-            continue
-        cur = words[0]
-        for w in words[1:]:
-            if draw.textlength(cur + " " + w, font=font) <= max_w:
-                cur += " " + w
-            else:
-                lines.append(cur)
-                cur = w
-        lines.append(cur)
-    return lines
-
-
-def _load_logo(max_w: int, max_h: int, dither: bool) -> Image.Image | None:
-    if not LOGO_PATH.exists():
-        return None
-    img = Image.open(LOGO_PATH)
-    if img.mode in ("RGBA", "LA", "P"):
-        img = img.convert("RGBA")
-        bg = Image.new("RGBA", img.size, "white")
-        img = Image.alpha_composite(bg, img)
-    img = img.convert("L")
-    img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
-    if dither:
-        return img.convert("1").convert("L")
-    return img.point(lambda p: 0 if p < 128 else 255)
-
-
-def _qr(data: str, size_px: int) -> Image.Image:
-    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0, box_size=1)
-    qr.add_data(data)
-    qr.make(fit=True)
-    n = qr.modules_count
-    module = max(size_px // n, 1)  # whole dots per module -> crisp, scannable
-    return qr.make_image(fill_color="black", back_color="white").get_image().convert("L").resize(
-        (n * module, n * module), Image.Resampling.NEAREST
-    )
-
-
 def design_size(cfg: dict) -> tuple[int, int]:
     """Portrait design canvas in dots: the short side of the stock is the width."""
     dpi, lab = cfg["printer"]["dpi"], cfg["label"]
@@ -133,78 +89,6 @@ def qr_image(data: str, ec: str = "M") -> Image.Image:
     qr.add_data(data or " ")
     qr.make(fit=True)
     return qr.make_image(fill_color="black", back_color="white").get_image().convert("L")
-
-
-def render(fields: dict, cfg: dict | None = None) -> Image.Image:
-    """Render the label in its portrait design orientation as a 1-bit image."""
-    cfg = cfg or load_config()
-    dpi = cfg["printer"]["dpi"]
-    lab, lay = cfg["label"], cfg["layout"]
-
-    W, H = design_size(cfg)
-    m = dots(lay["margin_mm"], dpi)
-    inner_w = W - 2 * m
-    gap = dots(1.5, dpi)
-
-    canvas = Image.new("L", (W, H), 255)
-    draw = ImageDraw.Draw(canvas)
-    top, bottom = m, H - m
-
-    # --- logo (top) ---
-    logo = _load_logo(inner_w, dots(lay["logo_max_height_mm"], dpi), lay.get("logo_dither", False))
-    if logo and fields.get("show_logo", True):
-        canvas.paste(logo, ((W - logo.width) // 2, top))
-        top += logo.height + gap
-
-    # --- QR + caption (bottom) ---
-    qr_data = (fields.get("qr_data") or "").strip()
-    caption = (fields.get("qr_caption") or "").strip()
-    if caption:
-        cf = _font(cfg, False, dots(lay["caption_size_mm"], dpi))
-        for line in reversed(_wrap(draw, caption, cf, inner_w)):
-            lh = round(cf.size * 1.15)
-            bottom -= lh
-            draw.text((W // 2, bottom), line, font=cf, fill=0, anchor="ma")
-        bottom -= gap // 2
-    if qr_data:
-        q = _qr(qr_data, dots(lay["qr_size_mm"], dpi))
-        bottom -= q.height
-        canvas.paste(q, ((W - q.width) // 2, bottom))
-        bottom -= gap
-
-    # --- text block (middle), shrunk uniformly until it fits ---
-    blocks = [
-        (fields.get("title", ""), True, lay["title_size_mm"], "center"),
-        (fields.get("subtitle", ""), False, lay["subtitle_size_mm"], "center"),
-        (fields.get("details", ""), False, lay["details_size_mm"], "left"),
-    ]
-    blocks = [b for b in blocks if b[0] and b[0].strip()]
-    avail = bottom - top
-    layout = []
-    for scale in [s / 100 for s in range(100, 29, -4)]:
-        layout, total = [], 0
-        fits = True
-        for text, bold, size_mm, align in blocks:
-            f = _font(cfg, bold, dots(size_mm * scale, dpi))
-            lines = _wrap(draw, text, f, inner_w)
-            if any(draw.textlength(l, font=f) > inner_w for l in lines):
-                fits = False
-            lh = round(f.size * 1.2)
-            layout.append((lines, f, lh, align))
-            total += lh * len(lines) + gap // 2
-        if fits and total <= avail:
-            break
-    y = top
-    for lines, f, lh, align in layout:
-        for line in lines:
-            if align == "center":
-                draw.text((W // 2, y), line, font=f, fill=0, anchor="ma")
-            else:
-                draw.text((m, y), line, font=f, fill=0)
-            y += lh
-        y += gap // 2
-
-    return finalize(canvas, cfg)
 
 
 def finalize(canvas: Image.Image, cfg: dict) -> Image.Image:
@@ -308,7 +192,7 @@ def calibration_zpl(cfg: dict) -> str:
         if v % 10 == 0 and 0 < v < cfg["label"]["stock_height_mm"]:
             d.text((xr + dots(6, dpi), y), f"y{v}", font=small, fill=0, anchor="lm")
     d.line([(xr, 0), (xr, H)], fill=0, width=2)
-    d.text((dots(32, dpi), dots(1, dpi)), "y=0 (first out?)", font=small, fill=0)
+    d.text((dots(32, dpi), dots(1, dpi)), "y=0 (comes out last)", font=small, fill=0)
 
     img = img.point(lambda p: 0 if p < 128 else 255).convert("1")
     w8 = (W + 7) // 8 * 8

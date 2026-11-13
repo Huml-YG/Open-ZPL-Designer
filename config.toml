@@ -14,6 +14,7 @@ head_width_mm = 105.7   # max print width of the G530 (4.16")
 # width = across the head, height = in the feed direction.
 stock_width_mm = 90
 stock_height_mm = 50
+corner_radius_mm = 1.0   # rounded label corners - shown in the designer only
 
 # The design is always laid out in portrait (short side on top).
 # rotate = clockwise degrees applied to the design to fit the stock.
@@ -32,21 +33,16 @@ head_offset_mm = 0.7
 shift_down_mm = 0.0
 shift_right_mm = 0.0
 
-# The editor shows an arrow at the label edge that leaves the printer first
-# (worked out from rotate). If it points the wrong way, set this to true.
+# The editor shows an arrow at the label edge that leaves the printer first,
+# worked out from rotate (the G530 ejects the bottom of its image first).
+# Only for a printer that feeds the other way round: set this to true.
 feed_flip = false
 
 [layout]
-margin_mm = 2.5
-logo_max_height_mm = 16
-logo_dither = false     # true = Floyd-Steinberg (photos), false = hard threshold (logos)
-title_size_mm = 6.0     # starting font sizes; text shrinks automatically to fit
-subtitle_size_mm = 3.8
-details_size_mm = 3.0
-qr_size_mm = 22
-caption_size_mm = 2.4
+margin_mm = 2.5         # safe-margin guide shown in the designer
 
 [fonts]
+# Font for the calibration ruler print (the designer uses assets/fonts/*).
 # .ttf path (relative to this folder), or empty to auto-detect DejaVu Sans.
 # DM Sans is a variable font: one file, weight chosen below (100-1000;
 # 400 = Regular, 500 = Medium, 600 = SemiBold, 700 = Bold).

@@ -21,6 +21,8 @@
   #wrap { position:relative; box-shadow:0 2px 14px #0003; background:#fff; flex:none; }
   /* Design renders on white; multiply lets the label colour show wherever no ink is printed. */
   #wrap .lower-canvas { mix-blend-mode:multiply; }
+  /* rounded label corners (radius set from config in applyZoom) */
+  #wrap, #wrap .lower-canvas, #bitmap { border-radius:var(--label-radius, 0); }
   .guide-margin { position:absolute; border:1px dashed #1f6feb66; pointer-events:none; }
   .snap { position:absolute; background:#e91e63; pointer-events:none; display:none; }
   /* feed arrow: a shade darker than the stage background (--bg) */
@@ -71,7 +73,6 @@
   <label class="hint">Copies <input type="number" id="copies" value="1" min="1" max="9999" style="width:64px"></label>
   <button id="dl">Download .zpl</button>
   <button id="print" class="primary" title="Ctrl+P">Print</button>
-  <a href="/form" class="hint" style="margin-left:6px">Simple form</a>
 </header>
 
 <aside id="tools">
@@ -84,6 +85,10 @@
   <button id="addRect">▭&nbsp; Rectangle</button>
   <button id="addEllipse">◯&nbsp; Ellipse</button>
   <button id="addLine">─&nbsp; Line</button>
+  <h3>Printer</h3>
+  <button id="uploadLogo" title="Replace the logo used by the Logo button">⇪&nbsp; Upload logo…</button>
+  <input type="file" id="logoFile" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" hidden>
+  <button id="calibrate" title="Prints a mm ruler across the whole print head to check alignment">⊞&nbsp; Print ruler</button>
   <h3>Tips</h3>
   <div class="hint">Double-click text to edit it.<br><br>Arrows nudge 0.2&nbsp;mm,<br>Shift+arrows 2&nbsp;mm.<br><br>Ctrl+C / V / D<br>Ctrl+P prints.<br>Del removes.<br><br>Dashed line = safe margin.</div>
 </aside>
@@ -245,11 +250,12 @@ function setupObject(o) {
   if (['rect', 'ellipse', 'line'].includes(o.type)) o.strokeUniform = true;
 }
 
-// Which edge of the portrait design leaves the printer first. The printer
-// prints its image from the top row (y=0), which exits first; the design is
-// rotated clockwise by CFG.rotate to get that image.
+// Which edge of the portrait design leaves the printer first. On the G530 the
+// BOTTOM of the printer image (highest y) exits first - verified on the
+// printer. The design is rotated clockwise by CFG.rotate to get that image,
+// so its bottom edge comes from this design edge:
 function showFeedDirection() {
-  const edges = { 0: 'top', 90: 'left', 180: 'bottom', 270: 'right' };
+  const edges = { 0: 'bottom', 90: 'right', 180: 'top', 270: 'left' };
   const opposite = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
   let edge = edges[CFG.rotate] || 'top';
   if (CFG.feed_flip) edge = opposite[edge];
@@ -265,6 +271,7 @@ function applyZoom(z) {
   canvas.setDimensions({ width: Math.round(W * zoom), height: Math.round(H * zoom) });
   const wrap = $('wrap');
   wrap.style.width = Math.round(W * zoom) + 'px'; wrap.style.height = Math.round(H * zoom) + 'px';
+  wrap.style.setProperty('--label-radius', mm(CFG.corner_radius_mm || 0) * zoom + 'px');
   const m = mm(CFG.margin_mm) * zoom, g = $('margin').style;
   g.left = g.top = m + 'px'; g.width = (W * zoom - 2 * m) + 'px'; g.height = (H * zoom - 2 * m) + 'px';
   $('zoomLbl').textContent = Math.round(zoom * 100) + ' %';
@@ -388,7 +395,7 @@ async function addImageFromSrc(src, { widthMm, maxHmm, top, kind = 'image', dith
 
 async function addLogo(opts = {}) {
   const r = await fetch('/assets/logo.png');
-  if (!r.ok) { setStatus('No logo uploaded (use Image… or the simple form)', 'err'); return; }
+  if (!r.ok) { setStatus('No logo yet: use “Upload logo…” on the left', 'err'); return; }
   const src = await fileToDataURL(await r.blob());
   return addImageFromSrc(src, { widthMm: 40, maxHmm: 16, kind: 'logo', ...opts });
 }
@@ -655,6 +662,22 @@ function wireUI() {
     } catch (err) { setStatus('Could not load image: ' + err.message, 'err'); }
   };
   $('addLogo').onclick = () => addLogo();
+  $('uploadLogo').onclick = () => $('logoFile').click();
+  $('logoFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    e.target.value = '';
+    const fd = new FormData(); fd.append('logo', f);
+    const r = await fetch('/logo', { method: 'POST', body: fd }), j = await r.json();
+    j.ok ? setStatus('Logo updated. Use “Logo” to add it.', 'ok') : setStatus(j.error, 'err');
+  };
+  $('calibrate').onclick = async () => {
+    if (!confirm('Print the calibration ruler (1 label)?')) return;
+    setStatus('Sending calibration ruler…');
+    try {
+      const r = await fetch('/calibrate', { method: 'POST' }), j = await r.json();
+      j.ok ? setStatus('Calibration ruler sent.', 'ok') : setStatus(j.error, 'err');
+    } catch (err) { setStatus('Print failed: ' + err, 'err'); }
+  };
   $('addQR').onclick = () => addQR();
   $('addRect').onclick = () => addShape('rect');
   $('addEllipse').onclick = () => addShape('ellipse');
