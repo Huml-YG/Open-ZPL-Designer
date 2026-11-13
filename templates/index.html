@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label printer</title>
+<style>
+  :root { --bg:#f4f4f2; --card:#fff; --ink:#222; --muted:#777; --accent:#1f6feb; --line:#ddd; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  main { display:flex; gap:24px; padding:24px; max-width:1100px; margin:auto; flex-wrap:wrap; }
+  form, .preview { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; }
+  form { flex:1 1 380px; display:flex; flex-direction:column; gap:12px; }
+  .preview { flex:0 0 auto; text-align:center; }
+  label { display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:13px; }
+  input[type=text], input[type=number], textarea { font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; }
+  textarea { min-height:110px; resize:vertical; }
+  .row { display:flex; gap:12px; align-items:end; flex-wrap:wrap; }
+  button { font:inherit; padding:9px 16px; border-radius:6px; border:1px solid var(--line); background:#fafafa; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  #img { width:250px; image-rendering:pixelated; border:1px solid #bbb; box-shadow:0 2px 8px #0002; background:#fff; }
+  .muted { color:var(--muted); font-size:12px; }
+  #status { min-height:1.4em; font-size:13px; }
+  .err { color:#c62828; } .ok { color:#2e7d32; }
+</style>
+</head>
+<body>
+<main>
+  <form id="f" onsubmit="return false">
+    <h2 style="margin:0">Product label</h2>
+    <label>Title <input type="text" name="title" placeholder="Product name"></label>
+    <label>Subtitle <input type="text" name="subtitle" placeholder="e.g. variant, weight"></label>
+    <label>Details <textarea name="details" placeholder="Ingredients, batch, best before…&#10;Each line on its own row."></textarea></label>
+    <label>QR code content <input type="text" name="qr_data" placeholder="https://…"></label>
+    <label>Text under QR <input type="text" name="qr_caption" placeholder="optional"></label>
+    <div class="row">
+      <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" name="show_logo" checked> Logo</label>
+      <label>Logo file <input type="file" id="logo" accept="image/*"></label>
+      <button type="button" id="rmlogo">Remove logo</button>
+    </div>
+    <div class="row">
+      <label>Copies <input type="number" name="copies" value="1" min="1" max="999" style="width:90px"></label>
+      <button type="button" class="primary" id="print">Print</button>
+      <button type="button" id="dl">Download .zpl</button>
+      <button type="button" id="cal">Print calibration ruler</button>
+    </div>
+    <div id="status"></div>
+    <div class="muted">Printer {{ cfg.printer.host }}:{{ cfg.printer.port }} · {{ cfg.printer.dpi }} dpi ·
+      stock {{ cfg.label.stock_width_mm }}×{{ cfg.label.stock_height_mm }} mm, rotate {{ cfg.label.rotate }}° — edit config.toml</div>
+  </form>
+  <div class="preview">
+    <img id="img" alt="label preview">
+    <div class="muted">Exact 1-bit print preview (portrait)</div>
+  </div>
+</main>
+<script>
+const form = document.getElementById('f'), img = document.getElementById('img'), status = document.getElementById('status');
+const KEY = 'label-form-v1';
+
+function data() {
+  const d = Object.fromEntries(new FormData(form));
+  d.show_logo = form.show_logo.checked;
+  return d;
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(data())); } catch {} }
+function restore() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || '{}');
+    for (const [k, v] of Object.entries(d)) {
+      const el = form.elements[k];
+      if (!el) continue;
+      if (el.type === 'checkbox') el.checked = v; else el.value = v;
+    }
+  } catch {}
+}
+const post = (url, body) => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+
+let timer, lastUrl;
+async function refresh() {
+  const r = await post('/preview', data());
+  if (!r.ok) { setStatus('Preview failed', true); return; }
+  const url = URL.createObjectURL(await r.blob());
+  img.src = url; if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = url;
+}
+function schedule() { save(); clearTimeout(timer); timer = setTimeout(refresh, 250); }
+function setStatus(msg, err) { status.textContent = msg; status.className = err ? 'err' : 'ok'; }
+
+form.addEventListener('input', schedule);
+document.getElementById('print').onclick = async () => {
+  setStatus('Sending…');
+  const r = await post('/print', data()), j = await r.json();
+  j.ok ? setStatus(`Sent ${j.copies} label(s) to printer.`) : setStatus(j.error, true);
+};
+document.getElementById('cal').onclick = async () => {
+  setStatus('Sending calibration ruler…');
+  const r = await fetch('/calibrate', {method:'POST'}), j = await r.json();
+  j.ok ? setStatus('Calibration ruler sent.') : setStatus(j.error, true);
+};
+document.getElementById('dl').onclick = async () => {
+  const r = await post('/zpl', data()), a = document.createElement('a');
+  a.href = URL.createObjectURL(await r.blob()); a.download = 'label.zpl'; a.click();
+};
+document.getElementById('logo').onchange = async (e) => {
+  const fd = new FormData(); fd.append('logo', e.target.files[0]);
+  const r = await fetch('/logo', {method:'POST', body:fd});
+  r.ok ? refresh() : setStatus('Logo upload failed', true);
+};
+document.getElementById('rmlogo').onclick = async () => { await fetch('/logo', {method:'DELETE'}); refresh(); };
+
+restore(); refresh();
+</script>
+</body>
+</html>

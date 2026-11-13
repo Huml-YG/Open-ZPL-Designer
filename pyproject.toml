@@ -1,0 +1,9 @@
+[project]
+name = "label-printing-zpl"
+version = "0.1.0"
+description = "Web form that renders product labels and prints them as ZPL on a GoDEX G530"
+requires-python = ">=3.12"
+dependencies = ["flask>=3.0", "pillow>=11.0", "qrcode>=8.0"]
+
+[tool.uv]
+package = false
