@@ -19,6 +19,8 @@
   #props { grid-area:props; background:var(--panel); border-left:1px solid var(--line); padding:12px; overflow:auto; }
   #stage { grid-area:stage; overflow:auto; display:flex; align-items:center; justify-content:center; padding:24px; position:relative; }
   #wrap { position:relative; box-shadow:0 2px 14px #0003; background:#fff; flex:none; }
+  /* Design renders on white; multiply lets the label colour show wherever no ink is printed. */
+  #wrap .lower-canvas { mix-blend-mode:multiply; }
   .guide-margin { position:absolute; border:1px dashed #1f6feb66; pointer-events:none; }
   .snap { position:absolute; background:#e91e63; pointer-events:none; display:none; }
   #bitmap { position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated; display:none; pointer-events:none; background:#fff; }
@@ -57,6 +59,7 @@
   <button id="redo" title="Ctrl+Y">↷ Redo</button>
   <span class="grow"></span>
   <span id="status"></span>
+  <label class="hint" title="Colour of your label stock - preview only, the printer prints black only">Label colour <input type="color" id="bg" value="#ffffff" style="width:36px;height:26px;padding:1px;vertical-align:middle"></label>
   <button id="preview" title="Show exactly what the printer gets">1-bit preview</button>
   <label class="hint">Copies <input type="number" id="copies" value="1" min="1" max="9999" style="width:64px"></label>
   <button id="dl">Download .zpl</button>
@@ -538,7 +541,7 @@ function snapshot(mode) {   // mode 'typing' = debounce, otherwise immediate
   if (restoring) return;
   clearTimeout(snapTimer);
   const take = () => {
-    const s = JSON.stringify(canvas.toJSON(PROPS));
+    const s = JSON.stringify(designJSON());
     if (hist[hi] === s) return;
     hist = hist.slice(0, hi + 1); hist.push(s);
     if (hist.length > 60) hist.shift();
@@ -548,10 +551,17 @@ function snapshot(mode) {   // mode 'typing' = debounce, otherwise immediate
   };
   mode === 'typing' ? snapTimer = setTimeout(take, 400) : take();
 }
+// Design file = Fabric JSON + labelColor (preview-only colour of the label stock).
+function designJSON() { return { ...canvas.toJSON(PROPS), labelColor: $('bg').value }; }
+function setLabelColor(c) { $('bg').value = c; $('wrap').style.background = c; if (previewOn) updateBitmap(); }
+
 function loadJSON(json) {
   restoring = true;
+  if (typeof json === 'string') json = JSON.parse(json);
+  json = { ...json, background: '#ffffff' };
   return new Promise(res => canvas.loadFromJSON(json, () => {
     canvas.getObjects().forEach(setupObject);
+    setLabelColor(toHexColor(json.labelColor));
     canvas.renderAll(); restoring = false; refreshPanel(); res();
   }));
 }
@@ -588,7 +598,17 @@ async function sendTo(url) {
 }
 
 let previewOn = false;
-async function updateBitmap() { $('bitmap').src = (await exportBitmap()).toDataURL(); }
+// The printed bitmap with unprinted (white) dots shown in the label colour.
+async function updateBitmap() {
+  const el = await exportBitmap(), bg = new fabric.Color($('bg').value).getSource();
+  const ctx = el.getContext('2d'), d = ctx.getImageData(0, 0, el.width, el.height), p = d.data;
+  for (let i = 0; i < p.length; i += 4) if (p[i] === 255) { p[i] = bg[0]; p[i + 1] = bg[1]; p[i + 2] = bg[2]; }
+  ctx.putImageData(d, 0, 0);
+  $('bitmap').src = el.toDataURL();
+}
+function toHexColor(c) {
+  try { return '#' + new fabric.Color(c || '#ffffff').toHex().toLowerCase(); } catch { return '#ffffff'; }
+}
 
 // ----------------------------------------------------------- saved designs ---
 async function refreshDesignList() {
@@ -661,6 +681,9 @@ function wireUI() {
   shapeProp('sWidth', (o, v) => o.set('strokeWidth', mm(Math.max(0, parseFloat(v) || 0))));
   shapeProp('sRadius', (o, v) => { const r = mm(Math.max(0, parseFloat(v) || 0)); o.set({ rx: r, ry: r }); });
 
+  // Label colour: preview only. exportBitmap() always renders on white, so it never prints.
+  $('bg').addEventListener('input', () => setLabelColor($('bg').value));
+  $('bg').addEventListener('change', () => snapshot());
   $('undo').onclick = undo; $('redo').onclick = redo;
   $('zoomIn').onclick = () => applyZoom(zoom * 1.25);
   $('zoomOut').onclick = () => applyZoom(zoom / 1.25);
@@ -689,7 +712,7 @@ function wireUI() {
   $('save').onclick = async () => {
     const name = $('name').value.trim();
     if (!name) { setStatus('Enter a design name first', 'err'); $('name').focus(); return; }
-    const r = await fetch('/api/designs/' + encodeURIComponent(name), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(canvas.toJSON(PROPS)) });
+    const r = await fetch('/api/designs/' + encodeURIComponent(name), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(designJSON()) });
     r.ok ? setStatus(`Saved “${name}”`, 'ok') : setStatus('Save failed (name: letters, numbers, space, - _ .)', 'err');
     refreshDesignList(); persist();
   };
