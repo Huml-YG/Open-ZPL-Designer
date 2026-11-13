@@ -32,6 +32,10 @@ head_offset_mm = 0.7
 shift_down_mm = 0.0
 shift_right_mm = 0.0
 
+# The editor shows an arrow at the label edge that leaves the printer first
+# (worked out from rotate). If it points the wrong way, set this to true.
+feed_flip = false
+
 [layout]
 margin_mm = 2.5
 logo_max_height_mm = 16

@@ -23,6 +23,13 @@
   #wrap .lower-canvas { mix-blend-mode:multiply; }
   .guide-margin { position:absolute; border:1px dashed #1f6feb66; pointer-events:none; }
   .snap { position:absolute; background:#e91e63; pointer-events:none; display:none; }
+  /* feed arrow: a shade darker than the stage background (--bg) */
+  #feed { position:absolute; display:flex; color:#c6c6c2; pointer-events:none; }
+  #feed svg { width:34px; height:34px; }
+  #feed.right  { left:calc(100% + 10px); top:50%; transform:translateY(-50%); }
+  #feed.left   { right:calc(100% + 10px); top:50%; transform:translateY(-50%); }
+  #feed.top    { bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); flex-direction:row; }
+  #feed.bottom { top:calc(100% + 6px); left:50%; transform:translateX(-50%); flex-direction:row; }
   #bitmap { position:absolute; inset:0; width:100%; height:100%; image-rendering:pixelated; display:none; pointer-events:none; background:#fff; }
   button, select, input { font:inherit; color:inherit; }
   button { padding:6px 10px; border:1px solid var(--line); background:#f7f7f5; border-radius:6px; cursor:pointer; white-space:nowrap; }
@@ -63,7 +70,7 @@
   <button id="preview" title="Show exactly what the printer gets">1-bit preview</button>
   <label class="hint">Copies <input type="number" id="copies" value="1" min="1" max="9999" style="width:64px"></label>
   <button id="dl">Download .zpl</button>
-  <button id="print" class="primary">Print</button>
+  <button id="print" class="primary" title="Ctrl+P">Print</button>
   <a href="/form" class="hint" style="margin-left:6px">Simple form</a>
 </header>
 
@@ -78,7 +85,7 @@
   <button id="addEllipse">◯&nbsp; Ellipse</button>
   <button id="addLine">─&nbsp; Line</button>
   <h3>Tips</h3>
-  <div class="hint">Double-click text to edit it.<br><br>Arrows nudge 0.2&nbsp;mm,<br>Shift+arrows 2&nbsp;mm.<br><br>Ctrl+C / V / D<br>Del removes.<br><br>Dashed line = safe margin.</div>
+  <div class="hint">Double-click text to edit it.<br><br>Arrows nudge 0.2&nbsp;mm,<br>Shift+arrows 2&nbsp;mm.<br><br>Ctrl+C / V / D<br>Ctrl+P prints.<br>Del removes.<br><br>Dashed line = safe margin.</div>
 </aside>
 
 <main id="stage">
@@ -88,6 +95,9 @@
     <div class="guide-margin" id="margin"></div>
     <div class="snap" id="snapV"></div>
     <div class="snap" id="snapH"></div>
+    <div id="feed" title="This edge comes out of the printer first">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h17M14 6l6 6-6 6"/></svg>
+    </div>
   </div>
   <div class="zoom">
     <button id="zoomOut">−</button><span id="zoomLbl"></span><button id="zoomIn">+</button><button id="zoomFit">Fit</button>
@@ -188,6 +198,7 @@ function setStatus(msg, cls = '') { $('status').textContent = msg; $('status').c
 async function init() {
   CFG = await (await fetch('/api/config')).json();
   W = CFG.width; H = CFG.height; DPD = CFG.dpi / 25.4;
+  showFeedDirection();
   $('labelInfo').textContent = `${round1(toMm(W))} × ${round1(toMm(H))} mm · ${CFG.dpi} dpi · printer ${CFG.printer}`;
 
   FONTS = await (await fetch('/api/fonts')).json();
@@ -232,6 +243,19 @@ function setupObject(o) {
   // Images are already pure black/white at print size (or a QR): never blur them.
   if (o.type === 'image') o.set({ objectCaching: false, imageSmoothing: false });
   if (['rect', 'ellipse', 'line'].includes(o.type)) o.strokeUniform = true;
+}
+
+// Which edge of the portrait design leaves the printer first. The printer
+// prints its image from the top row (y=0), which exits first; the design is
+// rotated clockwise by CFG.rotate to get that image.
+function showFeedDirection() {
+  const edges = { 0: 'top', 90: 'left', 180: 'bottom', 270: 'right' };
+  const opposite = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
+  let edge = edges[CFG.rotate] || 'top';
+  if (CFG.feed_flip) edge = opposite[edge];
+  $('feed').className = edge;
+  const angle = { right: 0, bottom: 90, left: 180, top: -90 }[edge];
+  $('feed').querySelector('svg').style.transform = 'rotate(' + angle + 'deg)';
 }
 
 // ------------------------------------------------------------------- zoom ---
@@ -698,11 +722,14 @@ function wireUI() {
   };
 
   $('print').onclick = async () => {
+    if ($('print').disabled) return;
+    $('print').disabled = true;
     setStatus('Sending…');
     try {
       const r = await sendTo('/api/print'), j = await r.json();
       j.ok ? setStatus(`Sent ${j.copies} label(s).`, 'ok') : setStatus(j.error, 'err');
     } catch (e) { setStatus('Print failed: ' + e, 'err'); }
+    finally { $('print').disabled = false; }
   };
   $('dl').onclick = async () => {
     const r = await sendTo('/api/zpl'), a = document.createElement('a');
@@ -735,6 +762,12 @@ function wireUI() {
   $('name').addEventListener('change', persist);
 
   document.addEventListener('keydown', e => {
+    // Ctrl+P prints to the label printer (works everywhere, also while typing)
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+      e.preventDefault();               // no browser print dialog
+      if (!e.repeat && !$('print').disabled) $('print').click();
+      return;
+    }
     const tag = document.activeElement?.tagName;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || canvas.getActiveObject()?.isEditing) return;
     const ctrl = e.ctrlKey || e.metaKey, o = canvas.getActiveObject();

@@ -48,7 +48,9 @@ def api_config():
     cfg = label.load_config()
     w, h = label.design_size(cfg)
     return jsonify(dpi=cfg["printer"]["dpi"], width=w, height=h,
-                   margin_mm=cfg["layout"]["margin_mm"], printer=cfg["printer"]["host"])
+                   margin_mm=cfg["layout"]["margin_mm"], printer=cfg["printer"]["host"],
+                   rotate=cfg["label"].get("rotate", 0) % 360,
+                   feed_flip=bool(cfg["label"].get("feed_flip", False)))
 
 
 @app.get("/api/fonts")
