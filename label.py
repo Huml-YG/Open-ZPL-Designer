@@ -184,7 +184,7 @@ def to_zpl(img: Image.Image, cfg: dict, copies: int = 1) -> str:
     lab = cfg["label"]
     ll = dots(lab["stock_height_mm"], dpi)
     # ^PW = the label width: the GoDEX centres a print width narrower than
-    # its head on its own, following the label guides. Small corrections go
+    # its head on its own fixed centre line (it can't sense the label sideways). Small corrections go
     # through shift_* (applied in finalize).
     pw = dots(lab["stock_width_mm"], dpi)
 

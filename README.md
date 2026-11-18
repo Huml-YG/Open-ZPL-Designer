@@ -28,7 +28,7 @@ browser editor  ──PNG──▶  Flask server  ──ZPL over TCP 9100──�
 1. **The browser draws the whole label.** The editor canvas is exactly the size of the label in printer dots (at 300 dpi, a 50 × 90 mm label is 591 × 1063 px). Fonts, images, QR codes and barcodes are all drawn there, so what you see is what prints.
 2. **On Print, the browser sends the finished label as one PNG** to the local server (`app.py`). A batch sends one PNG per CSV row, ten per request.
 3. **The server turns it into ZPL** (`label.py`). It rotates the design to the way the stock runs through the printer, applies the calibration offsets, and makes it strictly 1-bit. The whole label then becomes a single ZPL graphic field (`^GFA`).
-4. **The ZPL job goes to the printer's raw port 9100.** It uses only basic commands (`^XA ^PW ^LL ^LH ^FO ^GFA ^PQ ^XZ`), which the G530's ZPL emulation handles reliably. The job is exactly as wide as the label, and the printer centres it on the label itself.
+4. **The ZPL job goes to the printer's raw port 9100.** It uses only basic commands (`^XA ^PW ^LL ^LH ^FO ^GFA ^PQ ^XZ`), which the G530's ZPL emulation handles reliably. The job is exactly as wide as the label, and the printer centres it on its own fixed centre line. The printer can't see where the label is sideways, so the media guides have to keep the label on that line (see [Limitations](#limitations)).
 
 Because the printer only ever receives a finished bitmap, nothing depends on its built-in fonts, code pages or barcode support.
 
@@ -232,6 +232,7 @@ If the printer can't be reached mid-batch, the status line says which rows were 
 - **Batch data comes from a CSV only,** with no database, counters or date fields. Generate serial numbers in Excel or a script and import the CSV.
 - **Text doesn't shrink to fit.** A long value wraps in its text box, and a word too long to wrap overflows it. The batch check warns about it, but the font size stays as designed.
 - **Barcodes: EAN-13 and Code 128 only,** with no human-readable digits built in (use a text box). Other types (EAN-8, UPC, Data Matrix…) aren't supported.
+- **No sideways tracking.** The printer finds each label in the feed direction (gap sensor), but it has no sensor across the head. If the roll creeps sideways during a run, the print stays put and the label moves under it. Set the media guides snug against both edges of the liner, keep the roll seated square, and re-run media calibration after reloading. **Shift right** only corrects a constant offset, not drift.
 - **Top edge.** With the current calibration the printer can't reach the top ~2 mm of the label. Stay inside the safe margin.
 - **One printer, one label size** at a time, both set in Settings. Tested only on the GoDEX G530 (300 dpi) with 90 × 50 mm stock. Landscape designs and the 180° option haven't been checked on paper yet.
 - **Changing the label size or orientation doesn't move existing elements.** A design may need rearranging after a switch.

@@ -41,8 +41,9 @@ orientation = "portrait"
 #   design as wide as the stock            -> 0 (or 180)
 rotate = 270
 
-# The print is sent exactly label-wide and the printer centres it itself.
-# Offsets: shift the whole print if it still lands off-centre on the label.
+# The print is sent exactly label-wide and the printer centres it on its own
+# fixed centre line (it can't sense the label sideways - keep the media guides
+# snug). Offsets: shift the whole print if it lands off-centre on the label.
 # Directions are as you read the finished (portrait) label, regardless of rotate.
 # Positive shift_down moves everything down; negative moves it up. Same for shift_right.
 # Measured 2026-11-13 with the ruler (rotate = 270): ruler x=0 (= label top)
