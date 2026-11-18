@@ -74,10 +74,25 @@ def _load_font(file: str, size_px: int, weight: int, dpi: int) -> ImageFont.Free
 
 
 def design_size(cfg: dict) -> tuple[int, int]:
-    """Portrait design canvas in dots: the short side of the stock is the width."""
+    """Design canvas in dots. Portrait: the short side of the stock is the
+    width; landscape: the long side is."""
     dpi, lab = cfg["printer"]["dpi"], cfg["label"]
     short, long_ = sorted((lab["stock_width_mm"], lab["stock_height_mm"]))
+    if lab.get("orientation", "portrait") == "landscape":
+        short, long_ = long_, short
     return dots(short, dpi), dots(long_, dpi)
+
+
+def auto_rotate(lab: dict, flip: bool = False) -> int:
+    """Clockwise rotation that turns the design (portrait/landscape) into the
+    stock as it passes the head. flip = print it the other way round (180°).
+    Rotated cases default to 270, which puts the top of the design on the
+    head's x = 0 side (the G530 setup this was calibrated on)."""
+    short, long_ = sorted((lab["stock_width_mm"], lab["stock_height_mm"]))
+    design_w = long_ if lab.get("orientation", "portrait") == "landscape" else short
+    if abs(design_w - lab["stock_width_mm"]) < 1e-6:
+        return 180 if flip else 0
+    return 90 if flip else 270
 
 
 def qr_image(data: str, ec: str = "M") -> Image.Image:

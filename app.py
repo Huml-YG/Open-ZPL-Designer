@@ -12,6 +12,7 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 from PIL import ImageFont
 
 import label
+import settings
 
 app = Flask(__name__)
 FONTS_DIR = label.ROOT / "assets" / "fonts"
@@ -163,6 +164,38 @@ def save_design(name):
 def delete_design(name):
     _design_path(name).unlink(missing_ok=True)
     return jsonify(ok=True)
+
+
+# -------------------------------------------------------------- settings ---
+
+@app.get("/api/settings")
+def get_settings():
+    return jsonify(settings.current())
+
+
+@app.put("/api/settings")
+def put_settings():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        abort(400, "expected JSON object")
+    try:
+        settings.save(data)
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    return jsonify(ok=True)
+
+
+@app.post("/api/settings/test")
+def test_printer():
+    d = request.get_json(silent=True) or {}
+    try:
+        host = settings._parse("host", d.get("host"))
+        port = settings._parse("port", d.get("port"))
+        return jsonify(ok=True, message=settings.test_connection(host, port))
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    except OSError as e:
+        return jsonify(ok=False, error=f"Cannot reach {d.get('host')}:{d.get('port')}: {e}")
 
 
 # --------------------------------------------------------------- printer ---

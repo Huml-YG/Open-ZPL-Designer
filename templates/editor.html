@@ -74,6 +74,19 @@
   #dataBox .row input { width:0; flex:1; padding:3px 4px; }
   #rowLbl { flex:1; text-align:center; font-variant-numeric:tabular-nums; }
   #dataName { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink); }
+  /* settings dialog */
+  #settings { width:min(600px, calc(100vw - 32px)); max-height:calc(100vh - 48px); padding:0; border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 40px #0004; color:var(--ink); }
+  #settings::backdrop { background:#0005; }
+  #settings form { padding:18px 20px; }
+  #settings h2 { margin:0 0 4px; font-size:17px; }
+  #settings section { border-top:1px solid var(--line); padding:10px 0 12px; }
+  #settings section:first-of-type { border-top:0; }
+  #settings .grid { grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); }
+  #settings .span2 { grid-column:span 2; }
+  #settings .checks { display:flex; flex-direction:column; gap:4px; margin-top:8px; font-size:12px; }
+  #settings .rowline { display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap; }
+  #settings .actions { display:flex; justify-content:flex-end; gap:8px; position:sticky; bottom:0; background:var(--panel); padding-top:10px; }
+  #settingsErr:empty { display:none; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -118,7 +131,7 @@
     <button id="clearCsv">✕&nbsp; Clear data</button>
   </div>
   <h3>Printer</h3>
-  <button id="calibrate" title="Prints a mm ruler over the label area to check alignment">⊞&nbsp; Print ruler</button>
+  <button id="openSettings" title="Printer, label size and orientation, calibration">⚙&nbsp; Settings…</button>
   <h3>Tips</h3>
   <div class="hint">Double-click text to edit it.<br><br>Arrows nudge 0.2&nbsp;mm,<br>Shift+arrows 2&nbsp;mm.<br><br>Ctrl+C / V / D<br>Ctrl+P prints.<br>Del removes.<br><br>Dashed line = safe margin.</div>
 </aside>
@@ -235,6 +248,67 @@
     </div>
   </div>
 </aside>
+
+<dialog id="settings">
+  <form id="settingsForm" novalidate>
+    <h2>Settings</h2>
+    <p class="hint" style="margin:0 0 6px">Saved to <code>config.toml</code>. The editor reloads after saving; your design and CSV data stay.</p>
+
+    <section>
+      <h3>Printer</h3>
+      <div class="grid">
+        <label class="span2">Address (IP or hostname) <input type="text" name="host" autocomplete="off"></label>
+        <label>Port <input type="number" name="port" min="1" max="65535" step="1"></label>
+        <label>Resolution <select name="dpi"><option value="203">203 dpi</option><option value="300">300 dpi</option><option value="600">600 dpi</option></select></label>
+        <label>Darkness (−30…30) <input type="number" name="darkness" min="-30" max="30" step="1" placeholder="printer default"></label>
+        <label>Speed (inch/s) <input type="number" name="speed" min="1" max="14" step="1" placeholder="printer default"></label>
+      </div>
+      <div class="rowline"><button type="button" id="testPrinter">Test connection</button><span id="testResult" class="hint"></span></div>
+    </section>
+
+    <section>
+      <h3>Label</h3>
+      <div class="grid">
+        <label>Width across the print head (mm) <input type="number" name="stock_width_mm" min="5" max="120" step="0.1"></label>
+        <label>Length in feed direction (mm) <input type="number" name="stock_height_mm" min="5" max="400" step="0.1"></label>
+        <label>Design orientation <select name="orientation"><option value="portrait">Portrait (short side on top)</option><option value="landscape">Landscape (long side on top)</option></select></label>
+        <label>Corner radius (mm) <input type="number" name="corner_radius_mm" min="0" max="20" step="0.1"></label>
+        <label>Safe margin (mm) <input type="number" name="margin_mm" min="0" max="20" step="0.1"></label>
+      </div>
+      <div class="checks">
+        <label><input type="checkbox" name="flip"> Print rotated 180° (if labels come out upside down)</label>
+        <label><input type="checkbox" name="feed_flip"> Feed arrow points the wrong way (printer ejects the other edge first)</label>
+      </div>
+      <p class="hint" id="settingsSummary"></p>
+    </section>
+
+    <section>
+      <h3>Position calibration</h3>
+      <div class="grid">
+        <label>Shift down (mm) <input type="number" name="shift_down_mm" min="-30" max="30" step="0.05"></label>
+        <label>Shift right (mm) <input type="number" name="shift_right_mm" min="-30" max="30" step="0.05"></label>
+      </div>
+      <p class="hint">Moves the whole print as you read the finished label; negative = up / left. Print the ruler (it uses the saved settings, without shifts) and measure where its 0 marks land.</p>
+      <div class="rowline"><button type="button" id="settingsRuler">⊞&nbsp; Print ruler</button></div>
+    </section>
+
+    <section>
+      <h3>Photos &amp; gradients (dithered images)</h3>
+      <div class="grid">
+        <label>Print lightening <input type="number" name="dither_gamma" min="0.05" max="5" step="0.005"></label>
+        <label>Editor darkness <input type="number" name="dither_preview_gamma" min="0.1" max="10" step="0.1"></label>
+        <label>Slider strength <input type="number" name="dither_preview_slider" min="0.1" max="5" step="0.1"></label>
+      </div>
+      <p class="hint">Make up for dots spreading on paper. Print lightening: smaller = lighter print, 1 = off. Editor darkness and slider strength only change how the editor shows dithered images.</p>
+    </section>
+
+    <p id="settingsErr" class="err"></p>
+    <div class="actions">
+      <button type="button" id="settingsCancel">Cancel</button>
+      <button type="submit" class="primary" id="settingsSave">Save</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
 'use strict';
@@ -408,6 +482,7 @@ async function init() {
     canvas.on(ev, refreshPanel);
 
   wireUI();
+  wireSettings();
   setupResizers();
   zoomFit();
   window.addEventListener('resize', zoomFit);
@@ -1051,7 +1126,7 @@ function wireUI() {
       await addImageFromSrc(src, { dither: !isSvg && !/png|gif/i.test(f.type) });
     } catch (err) { setStatus('Could not load image: ' + err.message, 'err'); }
   };
-  $('calibrate').onclick = async () => {
+  $('settingsRuler').onclick = async () => {
     if (!confirm('Print the calibration ruler (1 label)?')) return;
     setStatus('Sending calibration ruler…');
     try {
@@ -1227,9 +1302,10 @@ function wireUI() {
     // Ctrl+P prints to the label printer (works everywhere, also while typing)
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault();               // no browser print dialog
-      if (!e.repeat && !$('print').disabled) $('print').click();
+      if (!e.repeat && !$('print').disabled && !$('settings').open) $('print').click();
       return;
     }
+    if ($('settings').open) return;     // shortcuts don't reach the canvas behind the dialog
     const tag = document.activeElement?.tagName;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || canvas.getActiveObject()?.isEditing) return;
     const ctrl = e.ctrlKey || e.metaKey, o = canvas.getActiveObject();
@@ -1247,6 +1323,58 @@ function wireUI() {
       o.setCoords(); canvas.requestRenderAll(); refreshPanel(); snapshot('typing');
     }
   });
+}
+
+// --------------------------------------------------------------- settings ---
+const settingsForm = () => $('settingsForm').elements;
+function settingsValues() {
+  const f = settingsForm(), v = {};
+  for (const el of f) {
+    if (!el.name) continue;
+    v[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+  }
+  return v;
+}
+function updateSettingsSummary() {
+  const v = settingsValues(), sw = +v.stock_width_mm, sh = +v.stock_height_mm;
+  if (!(sw > 0 && sh > 0)) { $('settingsSummary').textContent = ''; return; }
+  const [a, b] = [sw, sh].sort((x, y) => x - y), land = v.orientation === 'landscape';
+  const [w, h] = land ? [b, a] : [a, b];
+  $('settingsSummary').textContent = `Design canvas: ${w} × ${h} mm (${land ? 'landscape' : 'portrait'}), `
+    + `${Math.round(w / 25.4 * +v.dpi)} × ${Math.round(h / 25.4 * +v.dpi)} dots.`;
+}
+async function openSettings() {
+  const cur = await (await fetch('/api/settings')).json(), f = settingsForm();
+  for (const el of f) {
+    if (!el.name || !(el.name in cur)) continue;
+    if (el.type === 'checkbox') el.checked = !!cur[el.name];
+    else el.value = cur[el.name] ?? '';
+  }
+  $('settingsErr').textContent = ''; $('testResult').textContent = ''; $('testResult').className = 'hint';
+  updateSettingsSummary();
+  $('settings').showModal();
+}
+function wireSettings() {
+  $('openSettings').onclick = openSettings;
+  $('settingsCancel').onclick = () => $('settings').close();
+  $('settingsForm').addEventListener('input', updateSettingsSummary);
+  $('settingsForm').onsubmit = async e => {
+    e.preventDefault();
+    $('settingsErr').textContent = '';
+    const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settingsValues()) });
+    const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
+    if (!j.ok) { $('settingsErr').textContent = j.error; return; }
+    persist();               // design (and CSV) are already in localStorage
+    location.reload();       // canvas size, dpi and margin come from the config at load
+  };
+  $('testPrinter').onclick = async () => {
+    const v = settingsValues(), out = $('testResult');
+    out.className = 'hint'; out.textContent = 'Connecting…';
+    try {
+      const j = await (await fetch('/api/settings/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: v.host, port: v.port }) })).json();
+      out.textContent = j.ok ? '✓ ' + j.message : j.error; out.className = j.ok ? 'ok' : 'err';
+    } catch (err) { out.textContent = String(err); out.className = 'err'; }
+  };
 }
 
 init().catch(e => { console.error(e); setStatus('Editor failed to start: ' + e.message, 'err'); });

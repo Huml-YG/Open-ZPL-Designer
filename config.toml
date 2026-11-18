@@ -31,10 +31,13 @@ stock_width_mm = 90
 stock_height_mm = 50
 corner_radius_mm = 1.0   # rounded label corners - shown in the designer only
 
-# The design is always laid out in portrait (short side on top).
+# How the design is laid out: portrait (short side on top) or landscape.
+orientation = "portrait"
 # rotate = clockwise degrees applied to the design to fit the stock.
-#   stock 90 wide x 50 long  -> rotate = 90 (or 270 to flip it)
-#   stock 50 wide x 90 long  -> rotate = 0
+# Set automatically by the Settings dialog from orientation and
+# "print rotated 180°":
+#   design narrower than the stock is wide -> 270 (or 90 when rotated 180°)
+#   design as wide as the stock            -> 0 (or 180)
 rotate = 270
 
 # The print is sent exactly label-wide and the printer centres it itself.
