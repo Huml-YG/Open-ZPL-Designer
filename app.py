@@ -50,6 +50,10 @@ def api_config():
                    rotate=cfg["label"].get("rotate", 0) % 360,
                    feed_flip=bool(cfg["label"].get("feed_flip", False)),
                    corner_radius_mm=cfg["label"].get("corner_radius_mm", 0),
+                   label_color=cfg["label"].get("color", "#ffffff"),
+                   stock_width_mm=cfg["label"]["stock_width_mm"],
+                   stock_height_mm=cfg["label"]["stock_height_mm"],
+                   orientation=cfg["label"].get("orientation", "portrait"),
                    dither_gamma=cfg["printer"].get("dither_gamma", 1.0),
                    dither_preview_gamma=cfg["printer"].get("dither_preview_gamma", 1.0),
                    dither_preview_slider=cfg["printer"].get("dither_preview_slider", 1.0))

@@ -95,13 +95,14 @@
   <input type="text" id="name" placeholder="Design name" style="width:170px">
   <button id="save">Save</button>
   <select id="open"><option value="">Open design…</option></select>
+  <button id="importDesign" title="Load a design file (.json) saved by this app">Import…</button>
+  <input type="file" id="designFile" accept=".json,application/json" hidden>
   <button id="new">New</button>
   <button id="del" title="Delete saved design">Delete</button>
   <span class="sep"></span>
   <button id="undo" title="Ctrl+Z">↶ Undo</button>
   <button id="redo" title="Ctrl+Y">↷ Redo</button>
   <span id="status"></span>
-  <label class="hint" title="Colour of your label stock - preview only, the printer prints black only">Label colour <input type="color" id="bg" value="#ffffff" style="width:36px;height:26px;padding:1px;vertical-align:middle"></label>
   <button id="preview" title="Show exactly what the printer gets">1-bit preview</button>
   <label class="hint">Copies <input type="number" id="copies" value="1" min="1" max="9999" style="width:64px"></label>
   <button id="dl">Download .zpl</button>
@@ -124,7 +125,7 @@
   <input type="file" id="csvFile" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
   <div id="dataBox" hidden>
     <div class="hint"><div id="dataName"></div><span id="dataInfo"></span></div>
-    <label class="hint"><input type="checkbox" id="csvHeader" checked> First row is a header</label>
+    <label class="hint"><input type="checkbox" id="csvHeader"> First row is a header</label>
     <div class="row"><button id="rowPrev" title="Previous row">◀</button><span id="rowLbl"></span><button id="rowNext" title="Next row">▶</button></div>
     <div class="hint">Batch: rows</div>
     <div class="row"><input type="number" id="rowFrom" min="1"> – <input type="number" id="rowTo" min="1"></div>
@@ -274,6 +275,7 @@
         <label>Design orientation <select name="orientation"><option value="portrait">Portrait (short side on top)</option><option value="landscape">Landscape (long side on top)</option></select></label>
         <label>Corner radius (mm) <input type="number" name="corner_radius_mm" min="0" max="20" step="0.1"></label>
         <label>Safe margin (mm) <input type="number" name="margin_mm" min="0" max="20" step="0.1"></label>
+        <label title="Colour of the label stock: shown in the editor only, the printer prints black">Label colour (preview) <input type="color" name="color" style="width:100%;height:30px;padding:1px"></label>
       </div>
       <div class="checks">
         <label><input type="checkbox" name="flip"> Print rotated 180° (if labels come out upside down)</label>
@@ -381,7 +383,7 @@ async function readText(file) {
 // Batch data: kept in memory and localStorage, never in design files.
 let DATA = null;   // { name, text, header, cols: [header names], rows: [[values]], cur }
 const curRow = () => DATA ? DATA.rows[DATA.cur] : null;
-function setData(name, text, header = true, keep = {}) {
+function setData(name, text, header = false, keep = {}) {
   const all = parseCSV(text);
   if (!all.length) throw new Error('the file has no rows');
   const ncol = Math.max(...all.map(r => r.length));
@@ -457,6 +459,7 @@ async function init() {
   CFG = await (await fetch('/api/config')).json();
   W = CFG.width; H = CFG.height; DPD = CFG.dpi / 25.4;
   showFeedDirection();
+  setLabelColor(CFG.label_color);   // preview only; exportBitmap() always renders on white
   $('labelInfo').textContent = `${round1(toMm(W))} × ${round1(toMm(H))} mm · ${CFG.dpi} dpi · printer ${CFG.printer}`;
 
   FONTS = await (await fetch('/api/fonts')).json();
@@ -942,22 +945,71 @@ function snapshot(mode) {   // mode 'typing' = debounce, otherwise immediate
   };
   mode === 'typing' ? snapTimer = setTimeout(take, 400) : take();
 }
-// Design file = Fabric JSON + labelColor (preview-only colour of the label stock).
-function designJSON() { return { ...canvas.toJSON(PROPS), labelColor: $('bg').value }; }
-function setLabelColor(c) { $('bg').value = c; $('wrap').style.background = c; if (previewOn) updateBitmap(); }
+// Design file = Fabric JSON + `label`: the label it was made for (stock size,
+// orientation, corner radius, colour) and the dpi its coordinates are in, so
+// it can be opened on another PC with another printer. Printer-specific
+// settings (address, calibration, margin, dot gain) are not part of it.
+function currentLabel() {
+  return { stock_width_mm: CFG.stock_width_mm, stock_height_mm: CFG.stock_height_mm, orientation: CFG.orientation,
+           corner_radius_mm: CFG.corner_radius_mm, color: CFG.label_color, dpi: CFG.dpi };
+}
+function designJSON() { return { ...canvas.toJSON(PROPS), label: currentLabel() }; }
+function describeLabel(l) {
+  const [a, b] = [+l.stock_width_mm, +l.stock_height_mm].sort((x, y) => x - y), land = l.orientation === 'landscape';
+  return `${land ? b : a} × ${land ? a : b} mm ${land ? 'landscape' : 'portrait'}, colour ${l.color || '#ffffff'}`
+    + (+l.corner_radius_mm ? `, ${l.corner_radius_mm} mm corners` : '');
+}
+function labelDiffers(l) {
+  const c = currentLabel(), near = (x, y) => Math.abs(+x - +y) < 0.05;
+  return !near(l.stock_width_mm, c.stock_width_mm) || !near(l.stock_height_mm, c.stock_height_mm)
+    || (l.orientation || 'portrait') !== c.orientation || !near(l.corner_radius_mm ?? 0, c.corner_radius_mm ?? 0)
+    || toHexColor(l.color) !== toHexColor(c.color);
+}
+// After Open/Import: a design made for another label offers to switch the
+// label settings (written to config.toml), then the editor reloads with it.
+async function offerDesignLabel(json, name) {
+  const want = json?.label;
+  if (!want || !labelDiffers(want)) return;
+  if (!confirm(`“${name}” was made for a ${describeLabel(want)} label.\n`
+    + `This PC is set up for ${describeLabel(currentLabel())}.\n\n`
+    + `Switch the label settings to match the design?\n(Cancel keeps the current label; the design may not fit.)`)) return;
+  const cur = await (await fetch('/api/settings')).json();
+  for (const k of ['stock_width_mm', 'stock_height_mm', 'orientation', 'corner_radius_mm', 'color']) if (want[k] !== undefined) cur[k] = want[k];
+  const r = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cur) });
+  const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
+  if (!j.ok) { setStatus('Could not switch the label settings: ' + j.error, 'err'); return; }
+  persist();                // the opened design is in localStorage, so it comes back after the reload
+  location.reload();
+}
+// A design drawn at another resolution: scale it so everything keeps its size in mm.
+function scaleDesign(r) {
+  for (const o of canvas.getObjects()) {
+    o.set({ left: o.left * r, top: o.top * r });
+    if (o.type === 'textbox') o.set({ fontSize: o.fontSize * r, width: o.width * r });
+    else o.set({ scaleX: o.scaleX * r, scaleY: o.scaleY * r });
+    if (['rect', 'ellipse', 'line'].includes(o.type)) o.set('strokeWidth', o.strokeWidth * r);   // strokeUniform: not scaled with the object
+    if (o.kind === 'qr') { const k = Math.max(1, Math.round(o.scaleX)); o.set({ scaleX: k, scaleY: k }); }
+    if (o.kind === 'barcode') o.set('scaleX', Math.max(1, Math.round(o.scaleX)));
+    o.setCoords();
+  }
+}
+let labelColor = '#ffffff';   // preview only: the printer prints black only
+function setLabelColor(c) { labelColor = toHexColor(c); $('wrap').style.background = labelColor; if (previewOn) updateBitmap(); }
 
 // fresh: re-convert images from their originals, so black & white settings
 // that live in config.toml (dither_gamma) apply to designs saved earlier.
 async function loadJSON(json, { fresh = false } = {}) {
   restoring = true;
-  if (typeof json === 'string') json = JSON.parse(json);
-  json = { ...json, background: '#ffffff' };
-  await new Promise(res => canvas.loadFromJSON(json, res));
-  canvas.getObjects().forEach(setupObject);
-  if (fresh) for (const o of canvas.getObjects()) if (o.type === 'image' && o.origSrc) await rasterize(o);
-  if (fresh) await refreshCodes();
-  setLabelColor(toHexColor(json.labelColor));
-  canvas.renderAll(); restoring = false; refreshPanel();
+  try {
+    if (typeof json === 'string') json = JSON.parse(json);
+    json = { ...json, background: '#ffffff' };
+    await new Promise(res => canvas.loadFromJSON(json, res));
+    canvas.getObjects().forEach(setupObject);
+    const ratio = CFG.dpi / (json.label?.dpi || CFG.dpi);
+    if (Math.abs(ratio - 1) > 1e-6) { scaleDesign(ratio); fresh = true; }   // re-rasterize images at the new size
+    if (fresh) for (const o of canvas.getObjects()) if (o.type === 'image' && o.origSrc) await rasterize(o);
+    if (fresh) await refreshCodes();
+  } finally { canvas.renderAll(); restoring = false; refreshPanel(); }
 }
 async function undo() { if (hi > 0) { hi--; await loadJSON(hist[hi]); persist(); } }
 async function redo() { if (hi < hist.length - 1) { hi++; await loadJSON(hist[hi]); persist(); } }
@@ -1096,7 +1148,7 @@ async function downloadBatch() {
 let previewOn = false;
 // The printed bitmap with unprinted (white) dots shown in the label colour.
 async function updateBitmap() {
-  const { el } = await exportBitmap(), bg = new fabric.Color($('bg').value).getSource();
+  const { el } = await exportBitmap(), bg = new fabric.Color(labelColor).getSource();
   const ctx = el.getContext('2d'), d = ctx.getImageData(0, 0, el.width, el.height), p = d.data;
   for (let i = 0; i < p.length; i += 4) if (p[i] === 255) { p[i] = bg[0]; p[i + 1] = bg[1]; p[i + 2] = bg[2]; }
   ctx.putImageData(d, 0, 0);
@@ -1196,7 +1248,7 @@ function wireUI() {
   $('csvFile').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     e.target.value = '';
-    try { setData(f.name, await readText(f), $('csvHeader').checked); setStatus(`Imported ${f.name}`, 'ok'); }
+    try { setData(f.name, await readText(f)); setStatus(`Imported ${f.name} - tick “First row is a header” if it has one`, 'ok'); }   // header off by default
     catch (err) { setStatus(`Could not import ${f.name}: ${err.message}`, 'err'); }
   };
   $('csvHeader').onchange = () => {
@@ -1220,9 +1272,6 @@ function wireUI() {
   shapeProp('sWidth', (o, v) => o.set('strokeWidth', mm(Math.max(0, parseFloat(v) || 0))));
   shapeProp('sRadius', (o, v) => { const r = mm(Math.max(0, parseFloat(v) || 0)); o.set({ rx: r, ry: r }); });
 
-  // Label colour: preview only. exportBitmap() always renders on white, so it never prints.
-  $('bg').addEventListener('input', () => setLabelColor($('bg').value));
-  $('bg').addEventListener('change', () => snapshot());
   $('undo').onclick = undo; $('redo').onclick = redo;
   $('zoomIn').onclick = () => applyZoom(zoom * 1.25);
   $('zoomOut').onclick = () => applyZoom(zoom / 1.25);
@@ -1283,8 +1332,29 @@ function wireUI() {
   $('open').onchange = async e => {
     const name = e.target.value; if (!name) return;
     const r = await fetch('/api/designs/' + encodeURIComponent(name));
-    if (r.ok) { await loadJSON(await r.text(), { fresh: true }); $('name').value = name; snapshot(); setStatus(`Opened “${name}”`, 'ok'); }
+    if (r.ok) {
+      const json = JSON.parse(await r.text());
+      await loadJSON(json, { fresh: true }); $('name').value = name; snapshot(); setStatus(`Opened “${name}”`, 'ok');
+      await offerDesignLabel(json, name);
+    }
     e.target.value = '';
+  };
+  $('importDesign').onclick = () => $('designFile').click();
+  $('designFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    e.target.value = '';
+    try {
+      const json = JSON.parse(await f.text());
+      if (!json || !Array.isArray(json.objects)) throw new Error('not a design file saved by this app');
+      const prevName = $('name').value;
+      // the design must load and serialise again (Save/undo), otherwise put the previous one back
+      try { await loadJSON(json, { fresh: true }); designJSON(); }
+      catch (err) { await loadJSON(hist[hi]); $('name').value = prevName; throw new Error('the file is damaged or not from this app'); }
+      $('name').value = f.name.replace(/\.json$/i, '');
+      snapshot();
+      setStatus(`Imported “${f.name}” - Save to keep it in your designs`, 'ok');
+      await offerDesignLabel(json, $('name').value);
+    } catch (err) { setStatus(`Could not import ${f.name}: ${err.message}`, 'err'); }
   };
   $('new').onclick = async () => {
     if (!confirm('Start a new design? Unsaved changes to the current one are lost.')) return;
@@ -1357,6 +1427,9 @@ async function openSettings() {
 function wireSettings() {
   $('openSettings').onclick = openSettings;
   $('settingsCancel').onclick = () => $('settings').close();
+  // label colour previews live while the dialog is open; closing without saving reverts it
+  $('settingsForm').elements.color.addEventListener('input', e => setLabelColor(e.target.value));
+  $('settings').addEventListener('close', () => setLabelColor(CFG.label_color));
   $('settingsForm').addEventListener('input', updateSettingsSummary);
   $('settingsForm').onsubmit = async e => {
     e.preventDefault();

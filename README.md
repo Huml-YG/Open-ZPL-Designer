@@ -79,7 +79,11 @@ The grey arrow beside the canvas shows which edge of the label leaves the printe
 
 1. Add some text, an image and a QR code. Click **1-bit preview** to see the exact dots.
 2. Set **Copies** and click **Print**. The status line in the top bar says *Sent 1 label.*, or shows the error, for example when the printer can't be reached.
-3. Type a name and click **Save**. The design is stored in `designs/<name>.json` and can be reopened from **Open design…**.
+3. Type a name and click **Save**. The design is stored in `designs/<name>.json` and can be reopened from **Open design…**. **Import…** loads a design file from anywhere, for example one sent by a colleague; click **Save** to add it to your designs.
+
+   A design file is self-contained. Besides the elements and embedded images, it records the label it was made for (stock size, orientation, corner radius, colour) and the resolution it was drawn at. Printer-specific settings (address, calibration shifts, margin, dot gain) stay with each PC.
+   - **Different label setup:** if you open or import a design made for a different label than this PC is set up for, the editor offers to switch the label settings to match.
+   - **Different printer resolution:** if the printer has a different resolution (e.g. 203 instead of 300 dpi), the design is scaled so everything keeps its size in millimetres.
 
 ### 7. Optional: tune photos and gradients
 
@@ -97,7 +101,7 @@ To retune, print a black-to-transparent gradient at 25 %, 50 % and 75 % darkness
 
 - **Add** (left panel): Text, Image…, QR code, Barcode, Rectangle, Ellipse, Line. Images keep their original, so resizing re-converts them sharply. SVGs stay vector until they're printed.
 - **Properties** (right panel): exact position and size in mm, rotation, font, size in points, weight, alignment and spacing. For images: threshold or dither mode, invert, and Darkness. For QR codes: content and error correction. For barcodes: content, type, module width and height. Also centring, layer order, duplicate, lock and delete.
-- **Label colour** (top bar): previews coloured label stock. It's only for the screen, since the printer prints black only. It's saved with the design.
+- **Label colour** (**Settings → Label**): previews coloured label stock. It's only for the screen, since the printer prints black only. It belongs to the label stock, like its size, so it applies to every design.
 - **Panels**: drag the edges of the side panels to resize them; double-click an edge to reset it.
 - **Shortcuts**:
   - Ctrl+P prints (with CSV data loaded: the current row).
@@ -120,7 +124,7 @@ Print a series of labels where some content changes per label, such as EAN, MAC 
    5901234123464;AA:BB:CC:00:00:02;SN-002;https://example.com/d/2
    ```
 
-   Comma, semicolon and tab separators are detected automatically, quoted values work, and both UTF-8 and the windows-1250 encoding of Czech Excel are read correctly. A header row is optional: untick **First row is a header** if the file starts with data.
+   Comma, semicolon and tab separators are detected automatically, quoted values work, and both UTF-8 and the windows-1250 encoding of Czech Excel are read correctly. By default every row is a label. If the file starts with a header row (column names), tick **First row is a header**; the names then appear on the column buttons and the row isn't printed.
 2. **Import it** with **Import CSV…** in the left panel's Data section. The data stays in the browser, also across reloads, until you clear it. It is never saved into the design, so one design can be printed with any CSV.
 3. **Put placeholders in the design.** `$A` is the first column, `$B` the second, and so on. They work in text boxes (`MAC: $B`), QR code content (`$D`) and barcode content (`$A`). While data is loaded, buttons for each column appear under the Content field and insert the placeholder at the cursor.
    - `${AA}` is column 27 and onwards. The braced form `${B}` also works when letters follow the placeholder directly.
@@ -167,7 +171,7 @@ If the printer can't be reached mid-batch, the status line says which rows were 
 | `templates/editor.html` | The whole editor (HTML, CSS, JavaScript) |
 | `config.toml` | Printer address, label size, orientation, offsets, margin, dot gain (edited through **Settings**) |
 | `settings.py` | Settings dialog backend: validation and comment-preserving writes to `config.toml` |
-| `designs/` | Saved designs, one JSON file each, with images embedded. Local only: ignored by git, so back the folder up yourself |
+| `designs/` | Saved designs, one JSON file each, with images embedded and the label they were made for. Local only: ignored by git, so back the folder up yourself |
 | `assets/fonts/` | Fonts offered in the editor. `DMSans.ttf` (variable weight) and its licence `OFL.txt`, which must stay alongside it |
 | `static/vendor/` | Fabric.js 5.3.0, the canvas library, bundled so the app works offline (licence in `fabric-LICENSE.txt`) |
 | `shell.nix` | NixOS dev shell (uv + libraries Pillow needs) |

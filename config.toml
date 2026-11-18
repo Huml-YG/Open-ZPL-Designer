@@ -30,6 +30,7 @@ dither_preview_slider = 1.7
 stock_width_mm = 90
 stock_height_mm = 50
 corner_radius_mm = 1.0   # rounded label corners - shown in the designer only
+color = "#f8e45c"        # label stock colour - shown in the designer only (prints black)
 
 # How the design is laid out: portrait (short side on top) or landscape.
 orientation = "portrait"

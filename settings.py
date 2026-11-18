@@ -7,6 +7,7 @@ Each setting is described once in FIELDS (section, key, type, limits).
 from __future__ import annotations
 
 import os
+import re
 import socket
 import tempfile
 
@@ -15,7 +16,7 @@ import tomlkit
 import label
 
 # name -> (section, key, kind, min, max, optional)
-# kind: str | int | float | bool | choice:<a>|<b>
+# kind: str | int | float | bool | color | choice:<a>|<b>
 FIELDS = {
     "host":                  ("printer", "host", "str", None, None, False),
     "port":                  ("printer", "port", "int", 1, 65535, False),
@@ -33,10 +34,11 @@ FIELDS = {
     "shift_right_mm":        ("label", "shift_right_mm", "float", -30, 30, False),
     "feed_flip":             ("label", "feed_flip", "bool", None, None, False),
     "margin_mm":             ("layout", "margin_mm", "float", 0, 20, False),
+    "color":                 ("label", "color", "color", None, None, False),
 }
 DEFAULTS = {"port": 9100, "dpi": 300, "dither_gamma": 1.0, "dither_preview_gamma": 1.0,
             "dither_preview_slider": 1.0, "corner_radius_mm": 0.0, "orientation": "portrait",
-            "shift_down_mm": 0.0, "shift_right_mm": 0.0, "feed_flip": False, "margin_mm": 3.0}
+            "shift_down_mm": 0.0, "shift_right_mm": 0.0, "feed_flip": False, "margin_mm": 3.0, "color": "#ffffff"}
 
 
 def current(cfg: dict | None = None) -> dict:
@@ -57,6 +59,11 @@ def _parse(name: str, value):
         v = str(value).strip()
         if any(c.isspace() for c in v):
             raise ValueError(f"{name}: must not contain spaces")
+        return v
+    if kind == "color":
+        v = str(value).strip().lower()
+        if not re.fullmatch(r"#[0-9a-f]{6}", v):
+            raise ValueError(f"{name}: expected a colour like #f8e45c")
         return v
     if kind == "bool":
         if isinstance(value, bool):
