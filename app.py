@@ -78,25 +78,52 @@ def api_qr():
     return jsonify(src=src, modules=img.width)
 
 
+@app.post("/api/barcode")
+def api_barcode():
+    d = request.get_json(silent=True) or {}
+    try:
+        img = label.barcode_image(d.get("data", ""), d.get("type", "ean13"))
+    except ValueError as e:
+        return jsonify(error=str(e))
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    src = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    return jsonify(src=src, modules=img.width)
+
+
+MAX_LABELS_PER_REQUEST = 50
+
+
 def _editor_zpl():
-    """ZPL from the bitmap the editor rendered (multipart: image, copies)."""
-    file = request.files.get("image")
-    if not file:
+    """ZPL from bitmaps the editor rendered (multipart: one or more `image`, copies).
+
+    Each image becomes its own ^XA..^XZ label with ^PQ copies (batch printing
+    sends one image per CSV row).
+    """
+    files = request.files.getlist("image")
+    if not files:
         abort(400, "missing image")
+    if len(files) > MAX_LABELS_PER_REQUEST:
+        abort(400, f"at most {MAX_LABELS_PER_REQUEST} labels per request")
     cfg = label.load_config()
     copies = _copies(request.form.get("copies"))
-    return label.to_zpl(label.image_from_png(file.read(), cfg), cfg, copies), cfg, copies
+    zpl = "".join(label.to_zpl(label.image_from_png(f.read(), cfg), cfg, copies) for f in files)
+    return zpl, cfg, copies, len(files)
 
 
 @app.post("/api/print")
 def api_print():
-    zpl, cfg, copies = _editor_zpl()
-    return _send_or_error(zpl, cfg, copies)
+    zpl, cfg, copies, n = _editor_zpl()
+    try:
+        label.send(zpl, cfg)
+    except OSError as e:
+        return jsonify(ok=False, error=f"Cannot reach printer {cfg['printer']['host']}: {e}"), 502
+    return jsonify(ok=True, labels=n, copies=copies)
 
 
 @app.post("/api/zpl")
 def api_zpl():
-    zpl, _, _ = _editor_zpl()
+    zpl, _, _, _ = _editor_zpl()
     return Response(zpl, mimetype="text/plain",
                     headers={"Content-Disposition": "attachment; filename=label.zpl"})
 

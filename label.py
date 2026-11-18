@@ -90,6 +90,45 @@ def qr_image(data: str, ec: str = "M") -> Image.Image:
     return qr.make_image(fill_color="black", back_color="white").get_image().convert("L")
 
 
+BARCODE_TYPES = {"ean13": "EAN-13", "code128": "Code 128"}
+# Quiet zones (white) in modules, left/right, as required by the standards.
+_QUIET = {"ean13": (11, 7), "code128": (10, 10)}
+
+
+def _ean13_check(digits12: str) -> str:
+    s = sum(int(d) * (3 if i % 2 else 1) for i, d in enumerate(digits12))
+    return str((10 - s % 10) % 10)
+
+
+def barcode_image(data: str, kind: str = "ean13") -> Image.Image:
+    """1D barcode with 1 pixel per module (height 1), quiet zones included.
+
+    Raises ValueError with a readable message for invalid content.
+    """
+    import barcode  # python-barcode
+
+    data = (data or "").strip()
+    if kind == "ean13":
+        if not (data.isascii() and data.isdigit()) or len(data) not in (12, 13):
+            raise ValueError(f"EAN-13 needs 12 or 13 digits, got “{data}”")
+        if len(data) == 13 and data[12] != _ean13_check(data[:12]):
+            raise ValueError(f"EAN-13 “{data}” has a wrong check digit (should end in {_ean13_check(data[:12])})")
+        modules = barcode.get_barcode_class("ean13")(data[:12]).build()[0]
+    elif kind == "code128":
+        if not data:
+            raise ValueError("Code 128 content is empty")
+        if not data.isascii():
+            raise ValueError(f"Code 128 supports ASCII only, got “{data}”")
+        modules = barcode.get_barcode_class("code128")(data).build()[0]
+    else:
+        raise ValueError(f"unknown barcode type {kind}")
+    left, right = _QUIET[kind]
+    modules = "0" * left + modules + "0" * right
+    img = Image.new("L", (len(modules), 1), 255)
+    img.putdata([0 if m == "1" else 255 for m in modules])
+    return img
+
+
 def finalize(canvas: Image.Image, cfg: dict) -> Image.Image:
     """Threshold a grayscale design image to 1-bit and apply the shift calibration."""
     dpi, lab = cfg["printer"]["dpi"], cfg["label"]
